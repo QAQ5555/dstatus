@@ -238,67 +238,43 @@ systemctl enable dstatus
 systemctl start dstatus
 ```
 
-## ⚙️ 配置说明
+## 🐳 Docker 快速开始
+
+```bash
+# 1. 拉取配置文件
+wget https://raw.githubusercontent.com/your-username/dstatus/main/docker-compose.yml
+
+# 2. 创建环境变量文件
+cat > .env << EOF
+WEB_PORT=5555
+NODE_ENV=production
+EOF
+
+# 3. 启动服务
+docker-compose up -d
+```
+
+## 🔧 配置说明
 
 ### 环境变量
-```env
-NODE_ENV=production
-PORT=5555
-SESSION_SECRET=your_session_secret
-TELEGRAM_BOT_TOKEN=your_bot_token
-```
+- `WEB_PORT`: Web管理界面端口，默认5555
+- `NODE_ENV`: 运行环境，建议设置为 production
 
-### 配置文件 (config.js)
-```javascript
-module.exports = {
-  // 服务器配置
-  server: {
-    port: process.env.PORT || 5555,
-    session_secret: process.env.SESSION_SECRET
-  },
-  
-  // 数据库配置
-  database: {
-    path: './database/db.db'
-  },
-  
-  // Telegram 配置
-  telegram: {
-    token: process.env.TELEGRAM_BOT_TOKEN,
-    chat_id: your_chat_id
-  }
-}
-```
+### 数据持久化
+数据存储在以下 Docker volumes 中：
+- `dstatus-data`: 数据库文件
+- `dstatus-logs`: 日志文件
 
-## 📚 API 文档
-
-### 认证接口
-- POST `/api/auth/login` - 用户登录
-- POST `/api/auth/logout` - 用户登出
-
-### 服务器管理
-- GET `/api/servers` - 获取服务器列表
-- POST `/api/servers` - 添加服务器
-- PUT `/api/servers/:id` - 更新服务器信息
-- DELETE `/api/servers/:id` - 删除服务器
-
-### 分组管理
-- GET `/api/groups` - 获取分组列表
-- POST `/api/groups` - 创建分组
-- PUT `/api/groups/:id` - 更新分组
-- DELETE `/api/groups/:id` - 删除分组
-
-### 监控数据
-- GET `/api/stats/:server_id` - 获取服务器状态
-- GET `/api/stats/:server_id/history` - 获取历史数据
+## 📦 版本说明
+- latest: 最新版本
+- vX.Y.Z: 特定版本号
+- main: 主分支最新版本
 
 ## 🔒 安全建议
-
-1. 修改默认密码
-2. 使用反向代理（如 Nginx）并启用 HTTPS
-3. 配置访问控制
-4. 使用 SSH 密钥认证
-5. 定期备份数据
+1. 修改默认端口
+2. 使用反向代理并启用 HTTPS
+3. 设置强密码
+4. 定期备份数据
 
 ## 🤝 贡献指南
 

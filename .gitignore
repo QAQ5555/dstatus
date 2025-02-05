@@ -1,45 +1,32 @@
-# 依赖目录
+# Node
 node_modules/
-package-lock.json
+npm-debug.log
+yarn-debug.log
+yarn-error.log
 
-# 数据库文件
-database/db.db
-database/db.db*
-*.sqlite
-*.sqlite3
-
-# 配置文件
-config.js
-tokens.json
-
-# 日志文件
-log/
-*.log
-
-# 构建输出
-dist/
-build/
-neko-status/build/
-modules/servers/neko-status/
-
-# 系统文件
-.DS_Store
+# Environment
 .env
 .env.local
 .env.*.local
 
-# IDE 配置
+# Database
+database/*.db
+database/*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# 临时文件
-*.tmp
-*.temp
-work.js
-
-# 调试文件
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# OS
+.DS_Store
+Thumbs.db

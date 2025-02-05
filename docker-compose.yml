@@ -2,7 +2,7 @@ version: '3'
 
 services:
   web:
-    build: .  # 使用本地代码构建
+    image: ghcr.io/${GITHUB_REPOSITORY:-your-username/dstatus}:latest  # 使用 GitHub Container Registry
     container_name: dstatus
     ports:
       - "0.0.0.0:${WEB_PORT:-5555}:5555"      # Web 管理界面端口
