@@ -18,10 +18,16 @@ COPY --from=builder /app /app
 
 # 创建必要的目录和文件
 RUN mkdir -p /app/database /app/logs \
+    && touch /app/database/db.db \
     && touch /app/tokens.json \
     && chown -R dstatus:dstatus /app \
     && chmod -R 755 /app \
-    && chmod 644 /app/tokens.json
+    && chmod 644 /app/tokens.json \
+    && chmod 644 /app/database/db.db \
+    && chmod 755 /app/database
+
+# 设置数据卷
+VOLUME ["/app/database", "/app/logs"]
 
 USER dstatus
 

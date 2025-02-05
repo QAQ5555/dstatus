@@ -111,6 +111,69 @@ function getNodeStatus(node) {
     return NodeStatus.ONLINE;
 }
 
+// 设置存储相关常量和函数
+const SETTINGS_KEY = 'node_display_settings';
+
+// 敏感信息配置
+const SENSITIVE_CONFIG = {
+  serverName: {
+    selector: '.server-name a',
+    mask: name => name.replace(/[^-_\s]/g, '*')
+  },
+  infoButton: {
+    selector: '[id$="_host"]',
+    hide: true
+  }
+};
+
+function loadSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {
+      hideSensitive: false,
+      hideOffline: false
+    };
+  } catch {
+    return {
+      hideSensitive: false,
+      hideOffline: false
+    };
+  }
+}
+
+function saveSettings(settings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+// 处理敏感信息
+function handleSensitiveInfo(card, shouldHide) {
+  if (shouldHide) {
+    // 处理服务器名称
+    const nameEl = card.querySelector(SENSITIVE_CONFIG.serverName.selector);
+    if (nameEl) {
+      nameEl.dataset.originalText = nameEl.textContent;
+      nameEl.textContent = SENSITIVE_CONFIG.serverName.mask(nameEl.textContent);
+    }
+    
+    // 隐藏信息按钮
+    const infoBtn = card.querySelector(SENSITIVE_CONFIG.infoButton.selector);
+    if (infoBtn) {
+      infoBtn.style.display = 'none';
+    }
+  } else {
+    // 恢复服务器名称
+    const nameEl = card.querySelector(SENSITIVE_CONFIG.serverName.selector);
+    if (nameEl && nameEl.dataset.originalText) {
+      nameEl.textContent = nameEl.dataset.originalText;
+    }
+    
+    // 显示信息按钮
+    const infoBtn = card.querySelector(SENSITIVE_CONFIG.infoButton.selector);
+    if (infoBtn) {
+      infoBtn.style.display = '';
+    }
+  }
+}
+
 // 统一的节点统计函数
 function updateNodeStats(stats) {
     try {
@@ -239,6 +302,7 @@ const StatsController = {
     
     // 更新节点状态
     updateNodesStatus(stats) {
+        const settings = loadSettings();
         let updated = false;
         let totalNetStats = {
             downloadSpeed: 0,
@@ -255,15 +319,23 @@ const StatsController = {
             // 更新所有匹配的服务器卡片
             const serverCards = document.querySelectorAll(`[data-sid="${sid}"]`);
             serverCards.forEach(serverCard => {
-                // 更新卡片样式
-                Object.values(NodeStyleConfig).forEach(config => {
-                    serverCard.classList.remove(config.card);
-                    serverCard.classList.remove(config.text);
-                });
-                if (styleConfig.card !== 'hidden') {
-                    serverCard.classList.add(styleConfig.card);
+                // 应用敏感信息设置
+                handleSensitiveInfo(serverCard, settings.hideSensitive);
+                
+                // 应用离线节点隐藏设置
+                if (settings.hideOffline && status === NodeStatus.OFFLINE) {
+                    serverCard.style.display = 'none';
+                } else {
+                    // 更新卡片样式
+                    Object.values(NodeStyleConfig).forEach(config => {
+                        serverCard.classList.remove(config.card);
+                        serverCard.classList.remove(config.text);
+                    });
+                    if (styleConfig.card !== 'hidden') {
+                        serverCard.classList.add(styleConfig.card);
+                    }
+                    serverCard.style.display = styleConfig.card === 'hidden' ? 'none' : '';
                 }
-                serverCard.style.display = styleConfig.card === 'hidden' ? 'none' : '';
                 
                 // 更新文本元素
                 const textElements = serverCard.querySelectorAll('.text-gray-200, .text-gray-400');
@@ -606,4 +678,32 @@ function initSortButtons() {
         });
     });
 }
+
+// 添加设置变更监听
+document.addEventListener('DOMContentLoaded', () => {
+    // 加载保存的设置
+    const settings = loadSettings();
+    
+    // 设置复选框初始状态
+    const sensitiveCheckbox = document.getElementById('show-sensitive');
+    const offlineCheckbox = document.getElementById('hide-offline');
+    
+    if (sensitiveCheckbox) {
+        sensitiveCheckbox.checked = settings.hideSensitive;
+        sensitiveCheckbox.addEventListener('change', function(e) {
+            settings.hideSensitive = e.target.checked;
+            saveSettings(settings);
+            StatsController.update();
+        });
+    }
+    
+    if (offlineCheckbox) {
+        offlineCheckbox.checked = settings.hideOffline;
+        offlineCheckbox.addEventListener('change', function(e) {
+            settings.hideOffline = e.target.checked;
+            saveSettings(settings);
+            StatsController.update();
+        });
+    }
+});
 
