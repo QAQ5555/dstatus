@@ -100,7 +100,7 @@ docker restart dstatus
 docker stop dstatus
 
 # 更新服务
-docker stop datatus && dookcer rm dstatus 
+docker stop dstatus && docker rm dstatus 
 
 # 再次运行容器
 docker run -d \
