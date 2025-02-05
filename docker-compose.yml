@@ -2,7 +2,7 @@ version: '3'
 
 services:
   web:
-    image: ghcr.io/${GITHUB_REPOSITORY:fev125/dstatus}:latest  # 使用 GitHub Container Registry
+    image: ghcr.io/fev125/dstatus:sha-a8d8803  # 使用最新的 SHA 标签
     container_name: dstatus
     ports:
       - "0.0.0.0:${WEB_PORT:-5555}:5555"      # Web 管理界面端口
