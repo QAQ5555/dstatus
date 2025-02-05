@@ -1,15 +1,10 @@
 {%set title = "节点状态"%}
 {%extends "../base.html"%}
 {%block content%}
-<!-- 切换视图按钮 -->
-<div class="fixed right-6 bottom-6 z-50" title="切换为列表主题">
-    <a href="?theme=list" class="flex items-center justify-center w-14 h-14 text-white bg-primary-600 rounded-full shadow-lg hover:bg-primary-700 transition-colors duration-200">
-        <i class="material-icons">list</i>
-    </a>
-</div>
+
 
 <!-- 主容器 -->
-<div class="max-w-8xl mx-auto px-4 w-full">
+<div class="max-w-container mx-auto px-4 w-full">
     <!-- 仪表盘区域 -->
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
         <!-- 节点情况卡片 -->
@@ -136,7 +131,6 @@
                     data-group="all">
                 <i class="material-icons text-[18px]">dns</i>
                 <span>全部节点</span>
-                <span class="inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium bg-slate-700/50 text-gray-200 rounded-full transition-colors duration-200" id="all-nodes-count-tab">0/0</span>
             </button>
             
             <!-- 分组Tabs -->
@@ -181,7 +175,6 @@
                         <!-- 服务器名称和操作按钮 -->
                         <div class="server-card-handle flex items-center justify-between mb-4 cursor-move group">
                             <div class="flex items-center gap-2">
-                                <i class="material-icons md-16 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">drag_indicator</i>
                                 <i class="material-icons md-16 text-gray-400">dns</i>
                                 <div class="flex items-center gap-2">
                                     <h3 class="server-name font-medium text-gray-200 {%if node.stat==0%}text-gray-400{%endif%}" title="{{node.name}}">

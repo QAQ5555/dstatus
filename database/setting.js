@@ -20,7 +20,7 @@ const setting={
 };
 function init(key,val){if(setting.get(key)==undefined)setting.ins(key,val);}
 init("listen",5555);
-init("password","DStatus");
+init("password","dstatus");
 init("site",{
     name:"DStatus",
     url:"https://status.nekoneko.cloud",
