@@ -1,4 +1,4 @@
-version: '3'
+version: '3.8'
 
 services:
   web:
@@ -11,7 +11,14 @@ services:
       - dstatus-logs:/app/logs
     environment:
       - NODE_ENV=production
+      - TZ=Asia/Shanghai
     restart: unless-stopped  # 添加自动重启策略
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5555"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
 volumes:
   dstatus-data:
