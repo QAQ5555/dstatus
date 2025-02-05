@@ -15,4 +15,14 @@ services:
 
 volumes:
   dstatus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /root/dstatus/database
   dstatus-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /root/dstatus/logs
