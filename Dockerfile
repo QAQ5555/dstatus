@@ -15,7 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && groupadd -r dstatus && useradd -r -g dstatus dstatus
 
 COPY --from=builder /app /app
-RUN chown -R dstatus:dstatus /app
+
+# 创建必要的目录和文件
+RUN mkdir -p /app/database /app/logs \
+    && touch /app/tokens.json \
+    && chown -R dstatus:dstatus /app \
+    && chmod -R 755 /app \
+    && chmod 644 /app/tokens.json
 
 USER dstatus
 
