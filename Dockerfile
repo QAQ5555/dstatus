@@ -1,39 +1,25 @@
-FROM node:18-slim as builder
+FROM node:18 as builder
 
 WORKDIR /app
-COPY package*.json ./
+COPY . ./
 RUN npm install
 
-COPY . .
+FROM node:18-buster-slim
+WORKDIR /
 
-FROM node:18-slim
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r dstatus && useradd -r -g dstatus dstatus
-
-COPY --from=builder /app /app
+# 从构建阶段复制文件
+COPY --from=builder /app /
 
 # 创建必要的目录和文件
-RUN mkdir -p /app/database /app/logs \
-    && touch /app/database/db.db \
-    && touch /app/tokens.json \
-    && chown -R dstatus:dstatus /app \
-    && chmod -R 755 /app \
-    && chmod 644 /app/tokens.json \
-    && chmod 644 /app/database/db.db \
-    && chmod 755 /app/database
+RUN mkdir -p /database /logs \
+    && touch /database/db.db \
+    && touch /tokens.json \
+    && chmod -R 755 / \
+    && chmod 644 /database/db.db
 
 # 设置数据卷
-VOLUME ["/app/database", "/app/logs"]
+VOLUME ["/database", "/logs"]
 
-USER dstatus
-
-EXPOSE 5555 9999
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:5555', res => res.statusCode === 200 ? process.exit(0) : process.exit(1))"
+EXPOSE 5555
 
 CMD ["node", "nekonekostatus.js"]
