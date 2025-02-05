@@ -2,7 +2,7 @@ FROM node:18-slim as builder
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --registry=https://registry.npm.taobao.org
+RUN npm install
 
 COPY . .
 
