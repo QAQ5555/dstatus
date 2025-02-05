@@ -423,30 +423,19 @@ const StatsController = {
     }
 };
 
-// 修改 DOMContentLoaded 事件监听器
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. 初始化排序按钮
-    initSortButtons();
-    
-    // 2. 初始化标签页
-    initTabs();
-    
-    // 3. 激活默认标签页
-    const defaultTab = document.querySelector('.tab-btn[data-group="all"]');
-    if (defaultTab) {
-        defaultTab.click();
+// 初始化系统
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // 等待 SystemInitializer 完成初始化
+        await SystemInitializer.init();
+        
+        // 继续执行 stats.js 特有的初始化逻辑（如果有）
+        if (typeof StatsController !== 'undefined') {
+            await StatsController.update();
+        }
+    } catch (error) {
+        console.error('stats.js 初始化失败:', error);
     }
-    
-    // 4. 初始化拖拽功能
-    DragDropManager.init();
-    
-    // 5. 初始更新
-    StatsController.update();
-    
-    // 6. 设置定时更新
-    setInterval(() => {
-        StatsController.update();
-    }, StatsController.MIN_UPDATE_INTERVAL);
 });
 
 // Tab切换功能

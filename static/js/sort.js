@@ -1173,7 +1173,7 @@ const TabManager = {
     }
 };
 
-// 初始化系统
+// 系统主初始化入口
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         // 1. 等待页面完全加载

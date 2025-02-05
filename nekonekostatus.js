@@ -5,6 +5,7 @@ const express=require('express'),
     ckp=require("cookie-parser"),
     nunjucks=require("nunjucks"),
     fs=require("fs"),
+    fileUpload=require('express-fileupload'),
     schedule=require("node-schedule");
 const core=require("./core"),
     db=require("./database")(),
@@ -17,6 +18,12 @@ svr.use(bp.json({limit:'100mb'}));
 svr.use(ckp());
 svr.use(express.json());
 svr.use(express.static(__dirname+"/static"));
+// 添加文件上传中间件
+svr.use(fileUpload({
+    createParentPath: true,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB限制
+    abortOnLimit: true
+}));
 
 svr.engine('html', nunjucks.render);
 svr.set('view engine', 'html');
@@ -92,10 +99,18 @@ svr.all('/admin*',(req,res,nxt)=>{
     if(req.admin)nxt();
     else res.redirect('/login');
 });
-svr.get('/admin/db',(req,res)=>{
-    var path=__dirname+"/database/backup.db";
-    db.DB.backup(path).then(()=>{res.sendFile(path)});
-});
+
+// 设置全局变量
+svr.locals={
+    setting,
+    db,
+    bot,
+    ...core,
+};
+
+// 加载admin模块
+require('./modules/admin')(svr);
+require('./modules/restart')(svr);  // 加载重启模块
 
 var bot=null;
 if(setting.bot&&setting.bot.token){
@@ -111,12 +126,6 @@ if(setting.bot&&setting.bot.token){
     }
     else bot.bot.startPolling();
 }
-svr.locals={
-    setting,
-    db,
-    bot,
-    ...core,
-};
 
 fs.readdirSync(__dirname+'/modules',{withFileTypes:1}).forEach(file=>{
     if(!file.isDirectory())return;
