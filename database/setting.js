@@ -20,9 +20,9 @@ const setting={
 };
 function init(key,val){if(setting.get(key)==undefined)setting.ins(key,val);}
 init("listen",5555);
-init("password","nekonekostatus");
+init("password","DStatus");
 init("site",{
-    name:"Neko Neko Status",
+    name:"DStatus",
     url:"https://status.nekoneko.cloud",
 });
 init("neko_status_url","https://github.com/nkeonkeo/nekonekostatus/releases/download/v0.1/neko-status");
