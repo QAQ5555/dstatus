@@ -28,37 +28,74 @@ async function updateTrafficDisplay() {
         console.log('[Traffic Utils] 当前节点ID:', nodeId);
         if (!nodeId) return;
 
-        console.log('[Traffic Utils] 开始请求流量数据...');
+        // 1. 首先从traffic_data获取历史流量数据
+        const trafficData = document.getElementById('traffic_data');
+        let trafficStats = null;
+        if (trafficData) {
+            try {
+                trafficStats = JSON.parse(trafficData.value);
+                console.log('[Traffic Utils] 从traffic_data获取到的历史流量数据:', trafficStats);
+                
+                // 确保trafficStats包含必要的数组
+                if (!trafficStats.ds) trafficStats.ds = new Array(31).fill([0,0]);
+                if (!trafficStats.hs) trafficStats.hs = new Array(24).fill([0,0]);
+                if (!trafficStats.ms) trafficStats.ms = new Array(12).fill([0,0]);
+            } catch (e) {
+                console.error('[Traffic Utils] 解析traffic_data失败:', e);
+                trafficStats = {
+                    ds: new Array(31).fill([0,0]),
+                    hs: new Array(24).fill([0,0]),
+                    ms: new Array(12).fill([0,0])
+                };
+            }
+        }
+
+        // 2. 从preprocessed-data获取流量配置数据
+        const preprocessedData = document.getElementById('preprocessed-data');
+        let nodeData = null;
+        if (preprocessedData) {
+            try {
+                nodeData = JSON.parse(preprocessedData.value);
+                console.log('[Traffic Utils] 从preprocessed-data获取到的节点配置:', nodeData);
+            } catch (e) {
+                console.error('[Traffic Utils] 解析preprocessed-data失败:', e);
+            }
+        }
+
+        // 3. 合并数据
+        if (nodeData && trafficStats) {
+            const normalizedData = {
+                ds: trafficStats.ds || new Array(31).fill([0,0]),
+                hs: trafficStats.hs || new Array(24).fill([0,0]),
+                ms: trafficStats.ms || new Array(12).fill([0,0]),
+                traffic_calibration_date: nodeData.traffic_calibration_date || 0,
+                traffic_calibration_value: nodeData.traffic_calibration_value || 0,
+                traffic_reset_day: nodeData.traffic_reset_day || 1,
+                traffic_limit: nodeData.traffic_limit || 0,
+                traffic_used: nodeData.traffic_used || 0
+            };
+            console.log('[Traffic Utils] 合并后的完整数据:', normalizedData);
+            updateTrafficElements(normalizedData);
+        }
+
+        // 4. 获取实时数据更新
+        console.log('[Traffic Utils] 开始请求实时流量数据...');
         const response = await fetch(`/stats/${nodeId}/traffic`);
         const { data, error } = await response.json();
-        console.log('[Traffic Utils] 接收到的流量数据:', data);
-        console.log('[Traffic Utils] 接收到的错误信息:', error);
         
-        if (error) {
-            console.log('[Traffic Utils] 尝试从预处理数据中获取流量信息');
-            const preprocessedData = document.getElementById('preprocessed-data');
-            if (preprocessedData) {
-                try {
-                    const nodeData = JSON.parse(preprocessedData.value);
-                    console.log('[Traffic Utils] 预处理数据:', nodeData);
-                    updateTrafficElements(nodeData);
-                } catch (e) {
-                    console.error('[Traffic Utils] 解析预处理数据失败:', e);
-                }
-            }
-            return;
-        }
-        
-        if (data) {
+        if (!error && data) {
+            // 合并实时数据和历史数据
             const normalizedData = {
-                ds: data.ds || [],
-                traffic_calibration_date: data.calibration_date,
-                traffic_calibration_value: data.calibration_value,
-                traffic_reset_day: data.traffic_reset_day,
-                traffic_limit: data.traffic_limit,
-                traffic_used: data.traffic_used
+                ds: data.ds || (trafficStats ? trafficStats.ds : new Array(31).fill([0,0])),
+                hs: data.hs || (trafficStats ? trafficStats.hs : new Array(24).fill([0,0])),
+                ms: data.ms || (trafficStats ? trafficStats.ms : new Array(12).fill([0,0])),
+                traffic_calibration_date: data.calibration_date || 0,
+                traffic_calibration_value: data.calibration_value || 0,
+                traffic_reset_day: data.traffic_reset_day || 1,
+                traffic_limit: data.traffic_limit || 0,
+                traffic_used: data.traffic_used || 0
             };
-            console.log('[Traffic Utils] 规范化后的数据:', normalizedData);
+            console.log('[Traffic Utils] 合并后的实时数据:', normalizedData);
             updateTrafficElements(normalizedData);
         }
     } catch (error) {
@@ -147,21 +184,21 @@ function updateTrafficElements(data) {
             calibrationDate: normalizedData.traffic_calibration_date,
             calibrationValue: normalizedData.traffic_calibration_value
         });
-        console.log('[Traffic Utils] 计算得到的已用流量:', usedTraffic);
+        console.log('[Traffic Utils] 计算得到的已用流量(GB):', usedTraffic);
 
         // 3. 计算剩余流量
         const remaining = calculateRemainingTraffic({
             used: usedTraffic,
             limit: normalizedData.traffic_limit
         });
-        console.log('[Traffic Utils] 计算得到的剩余流量:', remaining);
+        console.log('[Traffic Utils] 计算得到的剩余流量(GB):', remaining);
 
         // 4. 更新显示
         // 4.1 更新已用流量
         const usedElement = document.getElementById('traffic-used');
         if (usedElement) {
-            usedElement.textContent = formatTraffic(usedTraffic);
-            console.log('[Traffic Utils] 已更新已用流量显示:', formatTraffic(usedTraffic));
+            usedElement.textContent = formatTraffic(usedTraffic * 1024 * 1024 * 1024);
+            console.log('[Traffic Utils] 已更新已用流量显示:', formatTraffic(usedTraffic * 1024 * 1024 * 1024));
         } else {
             console.error('[Traffic Utils] 未找到已用流量显示元素');
         }
@@ -169,8 +206,8 @@ function updateTrafficElements(data) {
         // 4.2 更新剩余流量
         const remainingElement = document.getElementById('traffic-remaining');
         if (remainingElement) {
-            remainingElement.textContent = remaining === -1 ? '∞' : formatTraffic(remaining);
-            console.log('[Traffic Utils] 已更新剩余流量显示:', remaining === -1 ? '∞' : formatTraffic(remaining));
+            remainingElement.textContent = remaining === -1 ? '∞' : formatTraffic(remaining * 1024 * 1024 * 1024);
+            console.log('[Traffic Utils] 已更新剩余流量显示:', remaining === -1 ? '∞' : formatTraffic(remaining * 1024 * 1024 * 1024));
         } else {
             console.error('[Traffic Utils] 未找到剩余流量显示元素');
         }
@@ -178,8 +215,8 @@ function updateTrafficElements(data) {
         // 4.3 更新总流量限制
         const limitElement = document.getElementById('traffic-limit');
         if (limitElement) {
-            limitElement.textContent = normalizedData.traffic_limit ? formatTraffic(normalizedData.traffic_limit) : '∞';
-            console.log('[Traffic Utils] 已更新总流量限制显示:', normalizedData.traffic_limit ? formatTraffic(normalizedData.traffic_limit) : '∞');
+            limitElement.textContent = normalizedData.traffic_limit ? formatTraffic(normalizedData.traffic_limit * 1024 * 1024 * 1024) : '∞';
+            console.log('[Traffic Utils] 已更新总流量限制显示:', normalizedData.traffic_limit ? formatTraffic(normalizedData.traffic_limit * 1024 * 1024 * 1024) : '∞');
         } else {
             console.error('[Traffic Utils] 未找到总流量限制显示元素');
         }
@@ -230,18 +267,12 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[Traffic Utils] 开始初始化流量数据模块...');
         initialized = true;
         
-        // 从页面上获取初始数据
-        const preprocessedData = document.getElementById('preprocessed-data');
-        if (preprocessedData) {
-            try {
-                const nodeData = JSON.parse(preprocessedData.value);
-                // 立即计算和更新一次流量显示
-                updateTrafficElements(nodeData);
-                console.log('[Traffic Utils] 初始流量数据计算完成');
-            } catch (e) {
-                console.error('[Traffic Utils] 解析初始流量数据失败:', e);
-            }
-        }
+        // 立即执行一次更新
+        updateTrafficDisplay().then(() => {
+            console.log('[Traffic Utils] 初始流量数据更新完成');
+        }).catch(error => {
+            console.error('[Traffic Utils] 初始流量数据更新失败:', error);
+        });
         
         // 设置定时更新
         setupTrafficUpdates();
@@ -280,13 +311,13 @@ function calculateTrafficInRange(trafficData, startTime, endTime) {
  * @returns {Date} 上一个重置日期
  */
 function calculateLastResetDate(now, resetDay) {
-    const lastReset = new Date(now);
-    if (now.getDate() >= resetDay) {
-        lastReset.setDate(resetDay);
-    } else {
+    const lastReset = new Date(now.getFullYear(), now.getMonth(), resetDay);
+    
+    // 如果重置日期在当前日期之后，回退到上个月
+    if (lastReset > now) {
         lastReset.setMonth(lastReset.getMonth() - 1);
-        lastReset.setDate(resetDay);
     }
+    
     lastReset.setHours(0, 0, 0, 0);
     return lastReset;
 }
@@ -301,42 +332,50 @@ function calculateLastResetDate(now, resetDay) {
  * @returns {number} 已用流量
  */
 function calculateUsedTraffic({trafficData, resetDay, calibrationDate, calibrationValue}) {
+    console.log('[Traffic Utils] 计算已用流量, 参数:', {
+        trafficData: trafficData?.length,
+        resetDay,
+        calibrationDate,
+        calibrationValue
+    });
+
     // 1. 验证输入
-    if (!Array.isArray(trafficData)) return 0;
+    if (!Array.isArray(trafficData)) {
+        console.warn('[Traffic Utils] trafficData不是数组');
+        return 0;
+    }
     
     // 2. 计算重置日期
     const now = new Date();
     const lastResetDate = calculateLastResetDate(now, resetDay);
+    console.log('[Traffic Utils] 上次重置日期:', lastResetDate);
     
-    // 3. 计算流量
+    // 3. 计算本月总流量
     let totalTraffic = 0;
     
-    // 4. 根据校准日期选择计算方式
+    // 如果有校准日期且在上次重置之后，使用校准值
     if (calibrationDate && calibrationDate > lastResetDate.getTime()/1000) {
-        // 使用校准值
         totalTraffic = calibrationValue;
-        // 只计算校准后的流量
-        for (const record of trafficData) {
-            if (Array.isArray(record) && record.length >= 3) {
-                const [inbound, outbound, timestamp] = record;
-                if (timestamp > calibrationDate) {
-                    totalTraffic += (Number(inbound) || 0) + (Number(outbound) || 0);
-                }
-            }
-        }
-    } else {
-        // 计算重置日后的所有流量
-        for (const record of trafficData) {
-            if (Array.isArray(record) && record.length >= 3) {
-                const [inbound, outbound, timestamp] = record;
-                if (timestamp >= lastResetDate.getTime()/1000) {
-                    totalTraffic += (Number(inbound) || 0) + (Number(outbound) || 0);
-                }
-            }
-        }
+        console.log('[Traffic Utils] 使用校准值:', calibrationValue);
     }
     
-    return Math.max(0, totalTraffic);
+    // 4. 计算当月流量
+    // 获取当月的数据（最后一个元素是最新的）
+    const currentMonthData = trafficData[trafficData.length - 1];
+    if (Array.isArray(currentMonthData) && currentMonthData.length >= 2) {
+        const inbound = validateTrafficValue(currentMonthData[0]);
+        const outbound = validateTrafficValue(currentMonthData[1]);
+        // 将字节转换为GB
+        totalTraffic = (inbound + outbound) / (1024 * 1024 * 1024);
+        console.log('[Traffic Utils] 当月流量数据:', { 
+            inbound: formatTraffic(inbound), 
+            outbound: formatTraffic(outbound), 
+            total: formatTraffic(inbound + outbound) 
+        });
+    }
+    
+    console.log('[Traffic Utils] 计算得到总流量:', formatTraffic(totalTraffic * 1024 * 1024 * 1024));
+    return totalTraffic;
 }
 
 /**

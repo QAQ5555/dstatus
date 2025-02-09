@@ -13,7 +13,7 @@ COPY --from=builder /app /
 # 创建必要的目录和文件
 RUN mkdir -p /database /logs \
     && touch /tokens.json \
-    && chmod -R 755 / \
+    && chmod -R 755 / 
 
 # 设置数据卷
 VOLUME ["/database", "/logs"]
