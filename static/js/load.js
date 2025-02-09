@@ -514,38 +514,53 @@ async function updateCharts(data) {
         const nodeId = window.location.pathname.split('/').filter(Boolean)[1];
         const nodeData = data[nodeId];
         
-        // 验证基本数据结构
-        if (!nodeData?.stat) return;
+        // 增强数据验证
+        if (!nodeData?.stat || typeof nodeData.stat !== 'object') {
+            console.warn('Invalid node data structure');
+            return;
+        }
 
-        const {cpu, mem, net} = nodeData.stat;
+        // 安全地访问数据
+        const cpu = nodeData.stat.cpu || { multi: 0 };
+        const mem = nodeData.stat.mem || { 
+            virtual: { used: 0, total: 1, usedPercent: 0 },
+            swap: { used: 0, total: 1, usedPercent: 0 }
+        };
+        const net = nodeData.stat.net || { 
+            delta: { in: 0, out: 0 },
+            total: { in: 0, out: 0 }
+        };
         
-        // 处理实时数据更新
-        // 处理系统负载数据
-        const newCpuValue = safeFormatNumber(cpu.multi * 100);
-        const newMemValue = safeFormatNumber(mem.virtual.usedPercent);
-        const newSwapValue = safeFormatNumber(mem.swap.usedPercent);
+        // 使用安全的数据访问方式
+        const newCpuValue = safeFormatNumber((cpu.multi || 0) * 100);
+        const newMemValue = safeFormatNumber(mem.virtual?.usedPercent || 0);
+        const newSwapValue = safeFormatNumber(mem.swap?.usedPercent || 0);
         
         // 处理带宽数据（转换为Mbps）
-        const newIbwValue = Number((net.delta.in / 128 / 1024).toFixed(2));
-        const newObwValue = Number((net.delta.out / 128 / 1024).toFixed(2));
+        const newIbwValue = Number(((net.delta?.in || 0) / 128 / 1024).toFixed(2));
+        const newObwValue = Number(((net.delta?.out || 0) / 128 / 1024).toFixed(2));
         
         // 更新实时数据
-        realtimeData.cpu.shift();
-        realtimeData.mem.shift();
-        realtimeData.swap.shift();
+        if (realtimeData) {
+            realtimeData.cpu.shift();
+            realtimeData.mem.shift();
+            realtimeData.swap.shift();
+            
+            realtimeData.cpu.push(newCpuValue);
+            realtimeData.mem.push(newMemValue);
+            realtimeData.swap.push(newSwapValue);
+        }
         
-        realtimeData.cpu.push(newCpuValue);
-        realtimeData.mem.push(newMemValue);
-        realtimeData.swap.push(newSwapValue);
+        // 更新带宽数据
+        if (realtimeBandwidthData) {
+            realtimeBandwidthData.ibw.shift();
+            realtimeBandwidthData.obw.shift();
+            
+            realtimeBandwidthData.ibw.push(newIbwValue);
+            realtimeBandwidthData.obw.push(newObwValue);
+        }
         
-        // 更新带宽数据（只更新数值，保持标签不变）
-        realtimeBandwidthData.ibw.shift();
-        realtimeBandwidthData.obw.shift();
-        
-        realtimeBandwidthData.ibw.push(newIbwValue);
-        realtimeBandwidthData.obw.push(newObwValue);
-        
-        // 更新系统负载图表（只更新数据，不更新时间轴）
+        // 更新图表
         if (tenMinLoadChart) {
             tenMinLoadChart.updateOptions({
                 series: [{
@@ -558,74 +573,21 @@ async function updateCharts(data) {
                     name: 'SWAP',
                     data: realtimeData.swap
                 }]
-            }, false, true);
+            });
         }
         
-        // 更新带宽图表（只更新数据，不更新时间轴）
         if (realtimeBandwidthChart) {
             realtimeBandwidthChart.updateOptions({
                 series: [{
-                    name: '下行',
+                    name: '入站',
                     data: realtimeBandwidthData.ibw
                 }, {
-                    name: '上行',
+                    name: '出站',
                     data: realtimeBandwidthData.obw
                 }]
-            }, false, true);
+            });
         }
-
-        // 如果存在历史数据，则更新历史图表
-        if (nodeData.stats?.load_m?.length && nodeData.stats?.load_h?.length) {
-            const stats = nodeData.stats;
-
-            // 更新60分钟数据
-            if (loadChartMinute) {
-                loadChartMinute.updateSeries([{
-                    name: 'CPU',
-                    data: stats.load_m.map(item => item[0])
-                }, {
-                    name: '内存',
-                    data: stats.load_m.map(item => item[1])
-                }, {
-                    name: 'SWAP',
-                    data: stats.load_m.map(item => item[2])
-                }]);
-            }
-
-            if (bandwidthChartMinute) {
-                bandwidthChartMinute.updateSeries([{
-                    name: '下行',
-                    data: stats.load_m.map(item => item[3])
-                }, {
-                    name: '上行',
-                    data: stats.load_m.map(item => item[4])
-                }]);
-            }
-
-            // 更新24小时数据
-            if (loadChartHour) {
-                loadChartHour.updateSeries([{
-                    name: 'CPU',
-                    data: stats.load_h.map(item => item[0])
-                }, {
-                    name: '内存',
-                    data: stats.load_h.map(item => item[1])
-                }, {
-                    name: 'SWAP',
-                    data: stats.load_h.map(item => item[2])
-                }]);
-            }
-
-            if (bandwidthChartHour) {
-                bandwidthChartHour.updateSeries([{
-                    name: '下行',
-                    data: stats.load_h.map(item => item[3])
-                }, {
-                    name: '上行',
-                    data: stats.load_h.map(item => item[4])
-                }]);
-            }
-        }
+        
     } catch (error) {
         console.error('Error updating charts:', error);
     }

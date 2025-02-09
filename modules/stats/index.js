@@ -3,8 +3,108 @@ const fetch=require("node-fetch"),
     schedule=require("node-schedule");
 function sleep(ms){return new Promise(resolve=>setTimeout(()=>resolve(),ms));};
 module.exports=async(svr)=>{
-const {db,pr,bot}=svr.locals;
+const {db,pr,bot,setting}=svr.locals;
 var stats={},fails={},highcpu={},highDown={},updating=new Set(),noticed={};
+
+/**
+ * 统一的状态数据获取接口
+ * @param {boolean} isAdmin - 是否为管理员
+ * @param {boolean} shouldFilter - 是否需要过滤敏感数据
+ * @returns {Object} 处理后的状态数据
+ */
+function getStatsData(isAdmin = false, shouldFilter = true) {
+    try {
+        const statsData = getStats(isAdmin);
+        
+        // 处理每个节点的数据
+        Object.entries(statsData).forEach(([sid, node]) => {
+            // 非管理员过滤敏感数据
+            if (!isAdmin && shouldFilter && node.data) {
+                delete node.data;
+            }
+            
+            // 处理stat对象
+            if (typeof node.stat === 'number' || !node.stat) {
+                // 如果stat是数字或不存在，转换为标准对象结构
+                const isOffline = !node.stat || node.stat <= 0;
+                statsData[sid] = {
+                    ...node,
+                    stat: {
+                        cpu: { multi: 0 },
+                        mem: {
+                            virtual: {
+                                used: 0,
+                                total: 1,
+                                usedPercent: 0
+                            }
+                        },
+                        net: {
+                            delta: { in: 0, out: 0 },
+                            total: { in: 0, out: 0 }
+                        },
+                        offline: isOffline
+                    }
+                };
+            } else if (typeof node.stat === 'object') {
+                // 确保对象结构完整性并处理无效值
+                const cpuMulti = Number(node.stat.cpu?.multi) || 0;
+                const memUsed = Number(node.stat.mem?.virtual?.used) || 0;
+                const memTotal = Number(node.stat.mem?.virtual?.total) || 1;
+                const memPercent = Number(node.stat.mem?.virtual?.usedPercent) || (memTotal > 0 ? (memUsed / memTotal * 100) : 0);
+
+                statsData[sid] = {
+                    ...node,
+                    stat: {
+                        ...node.stat,
+                        cpu: {
+                            multi: cpuMulti >= 0 ? cpuMulti : 0,
+                            single: Array.isArray(node.stat.cpu?.single) ? 
+                                   node.stat.cpu.single.map(v => Number(v) >= 0 ? Number(v) : 0) : 
+                                   [0]
+                        },
+                        mem: {
+                            virtual: {
+                                used: memUsed,
+                                total: memTotal,
+                                usedPercent: memPercent >= 0 ? memPercent : 0
+                            }
+                        },
+                        net: {
+                            delta: {
+                                in: Math.max(0, Number(node.stat.net?.delta?.in) || 0),
+                                out: Math.max(0, Number(node.stat.net?.delta?.out) || 0)
+                            },
+                            total: {
+                                in: Math.max(0, Number(node.stat.net?.total?.in) || 0),
+                                out: Math.max(0, Number(node.stat.net?.total?.out) || 0)
+                            }
+                        }
+                    }
+                };
+            }
+        });
+        
+        // 添加详细的数据日志
+        if (setting.debug) {
+            const sampleNode = Object.values(statsData)[0];
+            console.log(`[${new Date().toISOString()}] 状态数据示例:`, {
+                name: sampleNode?.name,
+                stat: sampleNode?.stat ? {
+                    cpu: sampleNode.stat.cpu?.multi,
+                    mem: sampleNode.stat.mem?.virtual?.usedPercent,
+                    net_in: sampleNode.stat.net?.delta?.in,
+                    net_out: sampleNode.stat.net?.delta?.out
+                } : '不存在'
+            });
+        }
+        
+        return statsData;
+    } catch (error) {
+        console.error('获取状态数据失败:', error);
+        return {};
+    }
+}
+
 function getStats(isAdmin=false){
     let Stats = {};
     for(let server of db.servers.all()) {
@@ -36,19 +136,42 @@ function getStats(isAdmin=false){
     }
     return Stats;
 }
+
+// 将getStats和getStatsData方法添加到svr.locals中
+svr.locals.stats = { getStats, getStatsData };
+
+// 更新路由处理
 svr.get("/",(req,res)=>{
-    let {theme=db.setting.get("theme")||"card"}=req.query;
-    const groups = db.groups.getWithCount();
-    res.render(`stats/${theme}`,{
-        stats: getStats(req.admin),
-        groups,
-        admin: req.admin
-    });
+    try {
+        const theme = req.query.theme || db.setting.get("theme") || "card";
+        const isAdmin = req.admin;
+        
+        console.log(`[${new Date().toISOString()}] 首页请求 - 主题:${theme} 管理员:${isAdmin}`);
+        
+        res.render(`stats/${theme}`,{
+            stats: getStatsData(isAdmin),
+            groups: db.groups.getWithCount(),
+            theme,
+            admin: isAdmin
+        });
+    } catch (error) {
+        console.error('首页渲染错误:', error);
+        res.status(500).send('服务器内部错误');
+    }
 });
+
 svr.get("/stats/data",(req,res)=>{
-    const statsData = getStats(req.admin);
-    res.json(statsData);
+    try {
+        const isAdmin = req.admin;
+        console.log(`[${new Date().toISOString()}] 数据API请求 - 管理员:${isAdmin}`);
+        
+        res.json(getStatsData(isAdmin));
+    } catch (error) {
+        console.error('数据API错误:', error);
+        res.status(500).json({ error: '获取数据失败' });
+    }
 });
+
 svr.get("/stats/:sid",(req,res)=>{
     let {sid}=req.params;
     const statsData = getStats(req.admin);
@@ -159,51 +282,66 @@ async function update(server){
         return;
     }
     
-    let stat=await getStat(server);
+    let stat = await getStat(server);
     if(stat){
-        let notice=false;
-        if(stats[sid]&&stats[sid].stat==false)notice=true;
+        let notice = false;
+        if(stats[sid] && stats[sid].stat==false) notice=true;
         
-        // 获取网络设备数据
+        // 1. 确保基础网络数据结构完整
+        if (!stat.net || typeof stat.net !== 'object') {
+            stat.net = {
+                delta: { in: 0, out: 0 },
+                total: { in: 0, out: 0 },
+                devices: {}
+            };
+        }
+
+        // 2. 处理网络设备数据
         let deviceData = null;
-        if(!stat.net || !stat.net.devices) {
-            // 静默处理
-        } else {
-            if(server.data.device){
-                deviceData = stat.net.devices[server.data.device];
+        if (stat.net.devices && server.data.device) {
+            deviceData = stat.net.devices[server.data.device];
+            if (deviceData) {
+                // 深拷贝设备数据，避免引用问题
+                deviceData = {
+                    total: {
+                        in: Number(deviceData.total?.in || 0),
+                        out: Number(deviceData.total?.out || 0)
+                    },
+                    delta: {
+                        in: Number(deviceData.delta?.in || 0),
+                        out: Number(deviceData.delta?.out || 0)
+                    }
+                };
             }
         }
 
-        if(deviceData){
-            // 更新实时网络数据
-            stat.net.total = deviceData.total;
-            stat.net.delta = deviceData.delta;
-            
-            // 更新服务器状态
-            stats[sid] = {
-                name: server.name,
-                stat,
-                expire_time: server.expire_time,
-                traffic_used: stats[sid]?.traffic_used || 0,
-                traffic_limit: server.traffic_limit || 0,
-                traffic_reset_day: server.traffic_reset_day || 1,
-                traffic_calibration_date: server.traffic_calibration_date || 0,
-                traffic_calibration_value: server.traffic_calibration_value || 0,
-                calibration_base_traffic: stats[sid]?.calibration_base_traffic || null
-            };
-        } else {
-            stats[sid] = {
-                name: server.name,
-                stat,
-                expire_time: server.expire_time,
-                traffic_used: stats[sid]?.traffic_used || 0,
-                traffic_limit: server.traffic_limit || 0,
-                traffic_reset_day: server.traffic_reset_day || 1,
-                traffic_calibration_date: server.traffic_calibration_date || 0,
-                traffic_calibration_value: server.traffic_calibration_value || 0,
-                calibration_base_traffic: stats[sid]?.calibration_base_traffic || null
-            };
-        }
+        // 3. 构建标准化的网络数据结构
+        const networkData = {
+            delta: {
+                in: deviceData ? deviceData.delta.in : Number(stat.net.delta?.in || 0),
+                out: deviceData ? deviceData.delta.out : Number(stat.net.delta?.out || 0)
+            },
+            total: {
+                in: deviceData ? deviceData.total.in : Number(stat.net.total?.in || 0),
+                out: deviceData ? deviceData.total.out : Number(stat.net.total?.out || 0)
+            }
+        };
+        
+        // 4. 更新服务器状态
+        stats[sid] = {
+            name: server.name,
+            stat: {
+                ...stat,
+                net: networkData  // 使用标准化后的网络数据
+            },
+            expire_time: server.expire_time,
+            traffic_used: stats[sid]?.traffic_used || 0,
+            traffic_limit: server.traffic_limit || 0,
+            traffic_reset_day: server.traffic_reset_day || 1,
+            traffic_calibration_date: server.traffic_calibration_date || 0,
+            traffic_calibration_value: server.traffic_calibration_value || 0,
+            calibration_base_traffic: stats[sid]?.calibration_base_traffic || null
+        };
         
         fails[sid]=0;
         if(notice){

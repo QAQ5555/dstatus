@@ -338,37 +338,18 @@ const DragManager = {
     maxRetries: 5,
     retryDelay: 1000,
 
-    async init() {
-        try {
-            // 1. 等待默认标签页激活
-            await this.waitForTabActivation();
-            
-            // 2. 等待元素加载
-            const elements = await this.waitForElements();
-            if (!elements) {
-                throw new Error('等待元素加载超时');
-            }
+    init() {
+        // 注释掉初始化逻辑（关键修改）
+        // this.createSortables(this.getContainers());
+        
+        // 添加调试信息
+        console.log('拖拽初始化已禁用');
+    },
 
-            // 3. 初始化拖拽功能
-            await this.initDragDrop(elements);
-            
-            // 4. 监听标签页切换
-            this.initTabChangeListener();
-            
-            console.log('拖拽功能初始化完成');
-            return true;
-        } catch (error) {
-            if (this.initRetries >= this.maxRetries) {
-                console.error('初始化拖拽功能失败: 超过最大重试次数');
-                Utils.showToast('初始化拖拽功能失败，请刷新页面重试', 'error');
-                throw error;
-            }
-
-            console.warn(`初始化失败，${this.maxRetries - this.initRetries}次重试机会`, error);
-            this.initRetries++;
-            await new Promise(resolve => setTimeout(resolve, this.retryDelay));
-            return this.init();
-        }
+    // 保留其他方法，但禁用实际功能
+    createSortables(containers) {
+        console.log('拖拽功能已禁用');
+        return [];
     },
 
     async waitForTabActivation() {
@@ -812,16 +793,9 @@ const DragManager = {
     },
 
     canDrag(element) {
-        if (!element) return false;
-        
-        // 检查元素状态
-        const isDisabled = element.classList.contains('offline') || 
-                          element.classList.contains('hidden');
-                          
-        // 检查全局状态
-        const isUpdating = StateManager.state.isUpdating;
-        
-        return !isDisabled && !isUpdating;
+        // 统一使用数据属性判断（修改判断逻辑）
+        return element.dataset.status === 'online' && 
+               !StateManager.state.isUpdating;
     },
 
     canDrop(to, element) {
@@ -1172,6 +1146,99 @@ const TabManager = {
         }
     }
 };
+
+// 获取排序值的辅助函数
+function getSortValue(card, type) {
+    let value = 0;
+    
+    // 优先使用data属性中的值
+    switch(type) {
+        case 'default':
+            return Number(card.dataset.top || 0);
+        case 'cpu':
+            return Number(card.dataset.cpu || 0);
+        case 'memory':
+            return Number(card.dataset.memory || 0);
+        case 'download':
+            return Number(card.dataset.download || 0);
+        case 'upload':
+            return Number(card.dataset.upload || 0);
+        case 'expiration':
+            return Number(card.dataset.expiration || 0);
+        default:
+            return 0;
+    }
+}
+
+// 执行排序
+function applySort(type, direction = 'desc') {
+    const activeGroupId = document.querySelector('.group-view:not(.hidden)')?.dataset.group;
+    if (!activeGroupId) return;
+
+    const container = activeGroupId === 'all' ? 
+        document.querySelector('.group-view[data-group="all"] .grid') : 
+        document.getElementById(`card-grid-${activeGroupId}`);
+    
+    if (!container) return;
+
+    // 保存拖拽状态
+    const cards = Array.from(container.querySelectorAll('.server-card'));
+    const dragStates = cards.map(card => ({
+        element: card,
+        state: {
+            dragData: card.getAttribute('draggable'),
+            dragEvents: card.getAttribute('data-has-drag-events')
+        }
+    }));
+
+    // 临时禁用拖拽
+    cards.forEach(card => {
+        card.removeAttribute('draggable');
+        card.removeAttribute('data-has-drag-events');
+    });
+
+    // 执行排序
+    cards.sort((a, b) => {
+        // 获取在线状态
+        const isOnlineA = a.querySelector('[id$="_status_indicator"]')?.classList.contains('bg-green-500') || false;
+        const isOnlineB = b.querySelector('[id$="_status_indicator"]')?.classList.contains('bg-green-500') || false;
+        
+        // 如果在线状态不同，在线的排在前面
+        if (isOnlineA !== isOnlineB) {
+            return isOnlineA ? -1 : 1;
+        }
+
+        // 获取排序值
+        const valueA = getSortValue(a, type);
+        const valueB = getSortValue(b, type);
+
+        // 如果值相同，按top值排序
+        if (valueA === valueB) {
+            const topA = Number(a.dataset.top || 0);
+            const topB = Number(b.dataset.top || 0);
+            return topB - topA;
+        }
+
+        // 根据排序方向返回比较结果
+        return direction === 'asc' ? valueA - valueB : valueB - valueA;
+    });
+
+    // 更新DOM
+    cards.forEach(card => container.appendChild(card));
+
+    // 恢复拖拽状态
+    dragStates.forEach(({element, state}) => {
+        if (state.dragData) {
+            element.setAttribute('draggable', state.dragData);
+        }
+        if (state.dragEvents) {
+            element.setAttribute('data-has-drag-events', 'true');
+        }
+    });
+
+    // 更新排序按钮状态
+    updateSortButtonStates(type, direction);
+}
 
 // 系统主初始化入口
 document.addEventListener('DOMContentLoaded', async () => {

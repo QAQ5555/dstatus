@@ -91,27 +91,6 @@ h3 .material-icons,
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons"></noscript>
 
 <!-- 数据存储区域 -->
-<script>
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    try {
-        const nodeData = JSON.parse(document.getElementById('preprocessed-data').value);
-        updateTrafficDisplay(nodeData);
-        
-        const progressBar = document.getElementById('traffic-progress-bar');
-        if (progressBar) {
-            const ratio = calculateTrafficUsageRatio(
-                validateTrafficValue(nodeData.traffic_used),
-                validateTrafficValue(nodeData.traffic_limit)
-            );
-            progressBar.style.transform = `scaleX(${ratio})`;
-        }
-    } catch (e) {
-        console.error('Error initializing traffic display:', e);
-    }
-});
-</script>
-
 <textarea id='traffic_data' class="hidden">{{traffic|dump}}</textarea>
 <textarea id='load_m_data' class="hidden">{{load_m|dump}}</textarea>
 <textarea id='load_h_data' class="hidden">{{load_h|dump}}</textarea>
@@ -452,48 +431,6 @@ document.addEventListener('DOMContentLoaded', () => {
 <script src="https://lf26-cdn-tos.bytecdntp.com/cdn/expire-1-M/apexcharts/3.33.0/apexcharts.min.js"></script>
 <script src="/js/traffic-utils.js"></script>
 <script>
-// 初始化数据
-const initialData = JSON.parse(document.getElementById('node-data').value || '{}');
-const trafficUsed = initialData.traffic_used || 0;
-const trafficLimit = initialData.traffic_limit || 0;
-
-document.addEventListener('DOMContentLoaded', () => {
-    // 获取并解析节点数据
-    const nodeDataElement = document.getElementById('node-data');
-    let nodeData = null;
-    
-    if (nodeDataElement) {
-        try {
-            nodeData = JSON.parse(nodeDataElement.value);
-            console.log('Node data loaded:', nodeData);
-            
-            // 更新流量显示
-            updateTrafficDisplay(nodeData);
-            
-            // 更新进度条
-            const progressBar = document.getElementById('traffic-progress-bar');
-            if (progressBar && nodeData) {
-                const ratio = calculateTrafficUsageRatio(
-                    validateTrafficValue(nodeData.traffic_used),
-                    validateTrafficValue(nodeData.traffic_limit)
-                );
-                progressBar.style.transform = `scaleX(${ratio})`;
-            }
-        } catch (e) {
-            console.error('Error parsing node data:', e);
-        }
-    }
-});
-
-// 字节格式化函数
-function strB(bytes) {
-    if (bytes === 0 || !bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-    const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
-    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
-}
-
 // 暗色主题配置
 const darkTheme = {
     mode: 'dark',

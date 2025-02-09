@@ -3,24 +3,216 @@
  * @description 服务器状态监控前端脚本，负责实时更新服务器状态信息和拖拽排序功能
  */
 
+// WebSocket连接管理
+    let ws = null;
+    let reconnectTimer = null;
+let currentGroupId = 'all';  // 跟踪当前分组
+
+    function initWebSocket() {
+        if (ws) {
+            ws.close();
+            ws = null;
+        }
+
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${location.host}/ws/stats`;
+
+        console.debug('正在连接WebSocket:', wsUrl);
+        ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+        try {
+            // 1. 数据完整性检查
+            if (!event.data) {
+                console.warn('接收到空数据');
+                return;
+            }
+
+            // 2. 解析数据
+            const message = JSON.parse(event.data);
+            
+            // 3. 验证消息格式
+            if (!message || typeof message !== 'object') {
+                console.warn('无效的消息格式:', message);
+                return;
+            }
+
+            const {type, data, timestamp} = message;
+            
+            // 4. 处理stats类型消息
+            if (type === 'stats') {
+                // 4.1 验证数据结构
+                if (!data || typeof data !== 'object') {
+                    console.warn('节点统计数据为空或格式错误:', data);
+                    return;
+                }
+
+                // 4.2 检查是否有节点数据
+                const nodeCount = Object.keys(data).length;
+                if (nodeCount === 0) {
+                    console.warn('没有节点数据');
+                    return;
+                }
+
+                // 4.3 初始化总计数据
+                const totals = {
+                    nodes: nodeCount,
+                    online: 0,
+                    offline: 0,
+                    download: 0,
+                    upload: 0,
+                    downloadTotal: 0,
+                    uploadTotal: 0,
+                    groups: {}
+                };
+
+                // 4.4 处理每个节点的数据
+                Object.entries(data).forEach(([sid, node]) => {
+                    // 检查节点状态
+                    const isOnline = node.stat && typeof node.stat === 'object' && !node.stat.offline;
+                    
+                    // 更新节点计数
+                    if (isOnline) {
+                        totals.online++;
+                        
+                        // 确保网络数据存在且有效
+                        if (node.stat.net) {
+                            // 转换为数字并确保非负
+                            const deltaIn = Math.max(0, Number(node.stat.net.delta?.in || 0));
+                            const deltaOut = Math.max(0, Number(node.stat.net.delta?.out || 0));
+                            const totalIn = Math.max(0, Number(node.stat.net.total?.in || 0));
+                            const totalOut = Math.max(0, Number(node.stat.net.total?.out || 0));
+                            
+                            // 累加到总计
+                            totals.download += deltaIn;
+                            totals.upload += deltaOut;
+                            totals.downloadTotal += totalIn;
+                            totals.uploadTotal += totalOut;
+                            
+                            if (window.setting?.debug) {
+                                console.debug(`节点 ${node.name} 带宽:`, {
+                                    deltaIn,
+                                    deltaOut,
+                                    totalIn,
+                                    totalOut
+                                });
+                            }
+                        }
+                    } else {
+                        totals.offline++;
+                    }
+
+                    // 更新分组统计
+                    const groupId = node.group_id || 'ungrouped';
+                    if (!totals.groups[groupId]) {
+                        totals.groups[groupId] = { total: 0, online: 0 };
+                    }
+                    totals.groups[groupId].total++;
+                    if (isOnline) totals.groups[groupId].online++;
+                });
+
+                if (window.setting?.debug) {
+                    console.debug('总计数据:', {
+                        nodes: totals.nodes,
+                        online: totals.online,
+                        offline: totals.offline,
+                        download: strbps(totals.download * 8),
+                        upload: strbps(totals.upload * 8),
+                        downloadTotal: strB(totals.downloadTotal),
+                        uploadTotal: strB(totals.uploadTotal)
+                    });
+                }
+
+                // 4.5 更新总体统计显示
+                updateTotalStats(totals);
+
+                // 4.6 更新节点显示
+                Object.entries(data).forEach(([sid, node]) => {
+                    updateNodeDisplay(sid, node);
+                });
+
+                // 4.7 如果启用了实时排序，重新应用排序
+                const realtimeSortCheckbox = document.getElementById('realtime-sort');
+                if (realtimeSortCheckbox?.checked && window.currentSortConfig) {
+                    applySort(window.currentSortConfig.type, window.currentSortConfig.direction);
+                }
+
+                // 在数据更新完成后触发同步事件（新增）
+                setTimeout(() => {
+                    const syncEvent = new CustomEvent('statsSyncComplete', {
+                        detail: { 
+                            timestamp: Date.now(),
+                            nodeCount: Object.keys(data).length 
+                        }
+                    });
+                    document.dispatchEvent(syncEvent);
+                }, 50);
+            } else {
+                console.warn('未知的消息类型:', type);
+            }
+        } catch (error) {
+            console.error('WebSocket数据处理错误:', error);
+            console.error('原始数据:', event.data);
+        }
+    };
+
+    ws.onopen = () => {
+        console.debug('WebSocket已连接');
+        // 清除重连定时器
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+    };
+
+    ws.onclose = (event) => {
+        console.warn('WebSocket连接已关闭:', event.code, event.reason);
+        ws = null;
+
+        // 设置重连
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+            console.debug('尝试重新连接WebSocket...');
+            initWebSocket();
+        }, 3000);
+    };
+
+    ws.onerror = (error) => {
+        console.error('WebSocket错误:', error);
+    };
+}
+
+// 页面加载时初始化WebSocket
+document.addEventListener('DOMContentLoaded', () => {
+    initWebSocket();
+});
+
+// 页面卸载时清理
+window.addEventListener('beforeunload', () => {
+    if (ws) {
+        ws.close();
+    }
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+    }
+});
+
 const KB = 1024, MB = KB * 1024, GB = MB * 1024, TB = GB * 1024;
-function strB(b) {
-    if(b === 0) return '0 B';
-    if(b < KB) return b.toFixed(2) + ' B';
-    if(b < MB) return (b/KB).toFixed(2) + ' KB';
-    if(b < GB) return (b/MB).toFixed(2) + ' MB';
-    if(b < TB) return (b/GB).toFixed(2) + ' GB';
-    return (b/TB).toFixed(2) + ' TB';
+function strB(bytes) {
+    if (isNaN(bytes) || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
 }
 
 const Kbps = 1000, Mbps = Kbps * 1000, Gbps = Mbps * 1000, Tbps = Gbps * 1000;
-function strbps(b) {
-    if(b === 0) return '0 bps';
-    if(b < Kbps) return b.toFixed(2) + ' bps';
-    if(b < Mbps) return (b/Kbps).toFixed(2) + ' Kbps';
-    if(b < Gbps) return (b/Mbps).toFixed(2) + ' Mbps';
-    if(b < Tbps) return (b/Gbps).toFixed(2) + ' Gbps';
-    return (b/Tbps).toFixed(2) + ' Tbps';
+function strbps(bps) {
+    if (isNaN(bps) || bps === 0) return '0 bps';
+    const k = 1024;
+    const sizes = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+    const i = Math.floor(Math.log(bps) / Math.log(k));
+    return (bps / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
 }
 
 /**
@@ -66,7 +258,7 @@ const NodeStatus = {
 const SortConfig = {
     defaultDirection: 'desc',      // 默认降序
     directions: {
-        // 定义每个排序类型的首次点击方向
+        default: 'desc',           // 新增:默认排序(按top值)
         cpu: 'desc',
         memory: 'desc',
         total_traffic: 'desc',
@@ -100,15 +292,17 @@ const NodeStyleConfig = {
 
 // 判断节点状态的工具函数
 function getNodeStatus(node) {
-    // 首先检查 node.stat 是否为有效对象
-    const isValidStat = node?.stat && typeof node.stat === 'object';
-    if (!isValidStat) return NodeStatus.OFFLINE;
-    
-    // 检查是否为隐藏节点
+    // 隐藏状态优先判断
     if (node.status === 2) return NodeStatus.HIDDEN;
     
-    // 其他情况为在线
-    return NodeStatus.ONLINE;
+    // 检查离线状态
+    if (node?.stat?.offline) return NodeStatus.OFFLINE;
+    
+    // 最后检查stat对象是否存在
+    const isValidStat = node?.stat && typeof node.stat === 'object';
+    const status = isValidStat ? NodeStatus.ONLINE : NodeStatus.OFFLINE;
+    
+    return status;
 }
 
 // 设置存储相关常量和函数
@@ -174,94 +368,403 @@ function handleSensitiveInfo(card, shouldHide) {
   }
 }
 
-// 统一的节点统计函数
+/**
+ * 更新节点统计信息
+ * @param {Object} stats - 节点统计数据
+ */
 function updateNodeStats(stats) {
+    if (!stats || typeof stats !== 'object') {
+        console.error('无效的统计数据:', stats);
+        return;
+    }
+
     try {
-        // 1. 计算总体统计
-        const totalStats = {
-            total: 0,
-            online: 0,
-            offline: 0
-        };
-        
-        // 使用 Set 确保节点不重复
-        const processedNodes = new Set();
-        
-        // 遍历所有节点，只统计一次
+        // 1. 更新所有节点的显示
         Object.entries(stats).forEach(([sid, node]) => {
-            if (processedNodes.has(sid)) return;
-            processedNodes.add(sid);
-            
+            // 获取节点状态和对应的样式配置
             const status = getNodeStatus(node);
-            if (status !== NodeStatus.HIDDEN) {
-                totalStats.total++;
-                if (status === NodeStatus.ONLINE) {
-                    totalStats.online++;
-                    } else {
-                    totalStats.offline++;
+            const styleConfig = NodeStyleConfig[status];
+            
+            // 更新所有分组中的节点
+            const cards = document.querySelectorAll(`.server-card[data-sid="${sid}"]`);
+            cards.forEach(card => {
+                // 移除所有可能的状态类
+                Object.values(NodeStyleConfig).forEach(config => {
+                    card.classList.remove(config.card);
+                    card.classList.remove(config.text);
+                });
+                
+                // 添加当前状态对应的类
+                if (styleConfig.card !== 'hidden') {
+                    card.classList.add(styleConfig.card);
                 }
+                card.style.display = styleConfig.card === 'hidden' ? 'none' : '';
+                
+                // 更新文本样式
+                const textElements = card.querySelectorAll('.text-gray-200, .text-gray-400');
+                textElements.forEach(el => {
+                    el.classList.remove('text-gray-200', 'text-gray-400');
+                    el.classList.add(styleConfig.text);
+                });
+                
+            updateNodeDisplay(sid, node);
+            });
+        });
+
+        // 2. 处理离线节点
+        document.querySelectorAll('.server-card').forEach(card => {
+            const sid = card.dataset.sid;
+            if (!stats[sid]) {
+                resetOfflineNodeDisplay(sid);
             }
         });
-        
-        // 2. 分组统计
-        const groups = new Map();
-        Object.entries(stats).forEach(([sid, node]) => {
-            if (!node.group_id) return;
-            
-            const status = getNodeStatus(node);
-            if (status === NodeStatus.HIDDEN) return;
-            
-            if (!groups.has(node.group_id)) {
-                groups.set(node.group_id, { total: 0, online: 0 });
-            }
-            
-            const groupStats = groups.get(node.group_id);
-            groupStats.total++;
-            if (status === NodeStatus.ONLINE) {
-                groupStats.online++;
-            }
-        });
-        
-        // 3. 更新显示
-        // 3.1 更新总体显示
-        const dashboardElements = {
-            total: document.getElementById('total-nodes'),
-            online: document.getElementById('online-nodes'),
-            offline: document.getElementById('offline-nodes')
-        };
-        
-        if (dashboardElements.total) dashboardElements.total.textContent = totalStats.total;
-        if (dashboardElements.online) dashboardElements.online.textContent = totalStats.online;
-        if (dashboardElements.offline) dashboardElements.offline.textContent = totalStats.offline;
-        
-        // 3.2 更新全部节点 tab
-        const allNodesTab = document.querySelector('[data-group="all"] .tab-count');
-        if (allNodesTab) {
-            allNodesTab.textContent = `${totalStats.online}/${totalStats.total}`;
+
+        // 3. 如果启用了实时排序，重新应用排序
+        const realtimeSortCheckbox = document.getElementById('realtime-sort');
+        if (realtimeSortCheckbox?.checked && window.currentSortConfig) {
+            applySort(window.currentSortConfig.type, window.currentSortConfig.direction);
         }
-        
-        // 3.3 更新分组 tab
-        groups.forEach((stats, groupId) => {
-            const countElement = document.getElementById(`group-${groupId}-count-tab`);
-            if (countElement) {
-                countElement.textContent = `${stats.online}/${stats.total}`;
-            }
-        });
-        
-        // 4. 触发更新完成事件
-        document.dispatchEvent(new CustomEvent('nodeStatsUpdated', {
-            detail: {
-                ...totalStats,
-                groups: Object.fromEntries(groups)
-            }
-        }));
-        
+
     } catch (error) {
-        console.error('更新节点统计时出错:', error);
+        console.error('更新节点统计信息时出错:', error);
     }
 }
 
-// 统一的更新控制器
+/**
+ * 更新节点显示
+ * @param {string} sid - 节点ID
+ * @param {Object} node - 节点数据
+ */
+function updateNodeDisplay(sid, node) {
+    const cards = document.querySelectorAll(`[data-sid="${sid}"]`);
+    if (!cards.length) return;
+
+    cards.forEach(card => {
+        // 更新数据属性
+        if (node.stat) {
+            // CPU数据
+            if (node.stat.cpu) {
+                const cpuValue = (node.stat.cpu.multi * 100).toFixed(2);
+                // 更新根元素数据属性
+                card.dataset.cpu = cpuValue;
+                
+                // 更新CPU显示和进度条
+                const cpuElements = card.querySelectorAll(`[id$="_CPU"]`);
+                cpuElements.forEach(el => {
+                    el.textContent = `${cpuValue}%`;
+                    el.dataset.cpu = cpuValue;
+                });
+                
+                const cpuProgress = card.querySelector(`[id$="_CPU_progress"]`);
+                if (cpuProgress) {
+                    cpuProgress.style.width = `${Math.min(100, Math.max(0, cpuValue))}%`;
+                }
+            }
+
+            // 内存数据
+            if (node.stat.mem && node.stat.mem.virtual) {
+                const memValue = ((node.stat.mem.virtual.used / node.stat.mem.virtual.total) * 100).toFixed(2);
+                // 更新根元素数据属性
+                card.dataset.memory = memValue;
+                
+                // 更新内存显示和进度条
+                const memElements = card.querySelectorAll(`[id$="_MEM"]`);
+                memElements.forEach(el => {
+                    el.textContent = `${memValue}%`;
+                    el.dataset.memory = memValue;
+                });
+                
+                const memProgress = card.querySelector(`[id$="_MEM_progress"]`);
+                if (memProgress) {
+                    memProgress.style.width = `${Math.min(100, Math.max(0, memValue))}%`;
+                }
+            }
+
+            // 网络数据
+            if (node.stat.net) {
+                // 实时带宽
+                if (node.stat.net.delta) {
+                    // 更新根元素数据属性
+                    card.dataset.download = node.stat.net.delta.in;
+                    card.dataset.upload = node.stat.net.delta.out;
+                    
+                    // 更新下载速度显示
+                    const netInElements = card.querySelectorAll(`[id$="_NET_IN"]`);
+                    netInElements.forEach(el => {
+                        el.textContent = strbps(node.stat.net.delta.in * 8);
+                        el.dataset.download = node.stat.net.delta.in;
+                    });
+                    
+                    // 更新上传速度显示
+                    const netOutElements = card.querySelectorAll(`[id$="_NET_OUT"]`);
+                    netOutElements.forEach(el => {
+                        el.textContent = strbps(node.stat.net.delta.out * 8);
+                        el.dataset.upload = node.stat.net.delta.out;
+                    });
+                }
+
+                // 总流量
+                if (node.stat.net.total) {
+                    // 更新根元素数据属性
+                    card.dataset.totalDownload = node.stat.net.total.in;
+                    card.dataset.totalUpload = node.stat.net.total.out;
+                    
+                    // 更新总下载量显示
+                    const netInTotalElements = card.querySelectorAll(`[id$="_NET_IN_TOTAL"]`);
+                    netInTotalElements.forEach(el => {
+                        el.textContent = strB(node.stat.net.total.in);
+                        el.dataset.totalDownload = node.stat.net.total.in;
+                    });
+                    
+                    // 更新总上传量显示
+                    const netOutTotalElements = card.querySelectorAll(`[id$="_NET_OUT_TOTAL"]`);
+                    netOutTotalElements.forEach(el => {
+                        el.textContent = strB(node.stat.net.total.out);
+                        el.dataset.totalUpload = node.stat.net.total.out;
+                    });
+                }
+            }
+        }
+
+        // 更新状态指示器
+        const status = getNodeStatus(node);
+        card.dataset.status = status; // 添加状态到根元素
+        
+        const indicators = card.querySelectorAll('[id$="_status_indicator"]');
+        indicators.forEach(indicator => {
+            // 移除所有可能的状态类
+            indicator.classList.remove('bg-green-500', 'bg-red-500');
+            // 添加当前状态类
+            indicator.classList.add(status === NodeStatus.ONLINE ? 'bg-green-500' : 'bg-red-500');
+            // 保持其他基础类
+            indicator.classList.add('rounded-full');
+            // 根据设备类型添加不同的尺寸类
+            if (window.innerWidth < 640) { // 移动端
+                indicator.classList.add('w-1.5', 'h-1.5');
+            } else { // PC端
+                indicator.classList.add('w-2', 'h-2');
+            }
+        });
+
+        // 更新到期时间
+        if (node.expire_time !== undefined) {
+            card.dataset.expiration = node.expire_time;
+            const expireElements = card.querySelectorAll(`[id$="_EXPIRE_TIME"]`);
+            expireElements.forEach(el => {
+                el.textContent = formatRemainingDays(node.expire_time);
+                el.dataset.expiration = node.expire_time;
+            });
+        }
+
+        // 更新卡片透明度
+        if (status === NodeStatus.ONLINE) {
+            card.classList.remove('opacity-60');
+            card.classList.add('opacity-100');
+        } else {
+            card.classList.remove('opacity-100');
+            card.classList.add('opacity-60');
+        }
+    });
+}
+
+// 辅助函数: 验证网络数据结构
+function validateNetworkStats(netStats) {
+    const defaultStats = {
+        delta: { in: 0, out: 0 },
+        total: { in: 0, out: 0 }
+    };
+
+    if (!netStats) {
+        console.warn('网络数据为空,使用默认值');
+        return defaultStats;
+    }
+
+    return {
+        delta: {
+            in: Number(netStats.delta?.in || 0),
+            out: Number(netStats.delta?.out || 0)
+        },
+        total: {
+            in: Number(netStats.total?.in || 0),
+            out: Number(netStats.total?.out || 0)
+        }
+    };
+}
+
+// 辅助函数: 更新节点网络显示
+function updateNodeNetworkDisplay(sid, netStats) {
+    const elements = {
+        netIn: document.getElementById(`${sid}_NET_IN`),
+        netOut: document.getElementById(`${sid}_NET_OUT`),
+        netInTotal: document.getElementById(`${sid}_NET_IN_TOTAL`),
+        netOutTotal: document.getElementById(`${sid}_NET_OUT_TOTAL`)
+    };
+
+    if (elements.netIn) {
+        elements.netIn.textContent = strbps(netStats.delta.in * 8);
+    }
+    if (elements.netOut) {
+        elements.netOut.textContent = strbps(netStats.delta.out * 8);
+    }
+    if (elements.netInTotal) {
+        elements.netInTotal.textContent = strB(netStats.total.in);
+    }
+    if (elements.netOutTotal) {
+        elements.netOutTotal.textContent = strB(netStats.total.out);
+    }
+}
+
+// 辅助函数: 重置离线节点显示
+function resetOfflineNodeDisplay(sid) {
+    ['NET_IN', 'NET_OUT', 'NET_IN_TOTAL', 'NET_OUT_TOTAL'].forEach(type => {
+        const el = document.getElementById(`${sid}_${type}`);
+        if (el) {
+            el.textContent = type.includes('TOTAL') ? '0 B' : '0 bps';
+        }
+    });
+}
+
+// 辅助函数: 更新卡片状态
+function updateCardStatus(card, status) {
+    const config = NodeStyleConfig[status];
+    
+    // 更新状态指示器
+    const indicator = card.querySelector('[id$="_status_indicator"]');
+    if (indicator) {
+        // 保持基础样式类，只更新颜色类
+        const baseClasses = 'w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full';
+        const colorClasses = Object.values(NodeStyleConfig).map(cfg => cfg.indicator);
+        
+        // 移除所有颜色类
+        colorClasses.forEach(cls => indicator.classList.remove(cls));
+        
+        // 设置新的类
+        indicator.className = `${baseClasses} ${config.indicator}`;
+        indicator.setAttribute('title', config.title);
+    }
+
+    // 更新卡片样式
+    Object.values(NodeStyleConfig).forEach(cfg => {
+        card.classList.remove(cfg.card);
+    });
+    card.classList.add(config.card);
+}
+
+// 辅助函数: 更新进度条
+function updateProgressBars(sid, stat) {
+    // CPU进度条
+    const cpuProgress = document.getElementById(`${sid}_CPU_progress`);
+    const cpuValue = stat?.cpu?.multi * 100 || 0;
+    if (cpuProgress) {
+        cpuProgress.style.width = `${cpuValue}%`;
+    }
+
+    // 内存进度条
+    const memProgress = document.getElementById(`${sid}_MEM_progress`);
+    const memValue = stat?.mem?.virtual?.usedPercent || 0;
+    if (memProgress) {
+        memProgress.style.width = `${memValue}%`;
+    }
+}
+
+// 辅助函数: 更新总体统计
+function updateTotalStats(totals) {
+    try {
+        // 1. 数据验证
+        if (!totals || typeof totals !== 'object') {
+            console.warn('无效的统计数据:', totals);
+            return;
+        }
+
+        // 2. 确保所有数值有效
+        const stats = {
+            nodes: Math.max(0, Number(totals.nodes) || 0),
+            online: Math.max(0, Number(totals.online) || 0),
+            offline: Math.max(0, Number(totals.offline) || 0),
+            download: Math.max(0, Number(totals.download) || 0),
+            upload: Math.max(0, Number(totals.upload) || 0),
+            downloadTotal: Math.max(0, Number(totals.downloadTotal) || 0),
+            uploadTotal: Math.max(0, Number(totals.uploadTotal) || 0)
+        };
+
+        // 3. 更新桌面端显示
+        const elements = {
+            totalNodes: document.getElementById('total-nodes'),
+            onlineNodes: document.getElementById('online-nodes'),
+            offlineNodes: document.getElementById('offline-nodes'),
+            currentNetIn: document.getElementById('current-download-speed'),
+            currentNetOut: document.getElementById('current-upload-speed'),
+            totalNetIn: document.getElementById('total-download'),
+            totalNetOut: document.getElementById('total-upload')
+        };
+
+        // 4. 更新移动端显示
+        const mobileElements = {
+            totalNodes: document.getElementById('total-nodes-mobile'),
+            onlineNodes: document.getElementById('online-nodes-mobile'),
+            offlineNodes: document.getElementById('offline-nodes-mobile'),
+            currentNetIn: document.getElementById('current-download-speed-mobile'),
+            currentNetOut: document.getElementById('current-upload-speed-mobile'),
+            totalNetIn: document.getElementById('total-download-mobile'),
+            totalNetOut: document.getElementById('total-upload-mobile')
+        };
+
+        // 5. 更新显示
+        [elements, mobileElements].forEach(els => {
+            // 更新节点统计
+            if (els.totalNodes) els.totalNodes.textContent = stats.nodes;
+            if (els.onlineNodes) els.onlineNodes.textContent = stats.online;
+            if (els.offlineNodes) els.offlineNodes.textContent = stats.offline;
+
+            // 更新实时带宽 (转换为 bits per second)
+            if (els.currentNetIn) els.currentNetIn.textContent = strbps(stats.download * 8);
+            if (els.currentNetOut) els.currentNetOut.textContent = strbps(stats.upload * 8);
+
+            // 更新总流量
+            if (els.totalNetIn) els.totalNetIn.textContent = strB(stats.downloadTotal);
+            if (els.totalNetOut) els.totalNetOut.textContent = strB(stats.uploadTotal);
+        });
+
+        // 6. 更新分组统计
+        if (totals.groups) {
+            Object.entries(totals.groups).forEach(([groupId, groupStats]) => {
+                const countElement = document.getElementById(`group-${groupId}-count-tab`);
+                if (countElement) {
+                    countElement.textContent = `${groupStats.online}/${groupStats.total}`;
+                }
+            });
+        }
+
+        // 7. 调试日志
+        if (window.setting?.debug) {
+            console.debug('更新总体统计:', {
+                nodes: stats.nodes,
+                online: stats.online,
+                offline: stats.offline,
+                currentDownload: strbps(stats.download * 8),
+                currentUpload: strbps(stats.upload * 8),
+                totalDownload: strB(stats.downloadTotal),
+                totalUpload: strB(stats.uploadTotal)
+            });
+        }
+    } catch (error) {
+        console.error('更新总体统计时出错:', error);
+    }
+}
+
+// 辅助函数: 标记节点错误状态
+function markNodeAsError(card) {
+    card.classList.add('error-state');
+    const statusIndicator = card.querySelector('[id$="_status_indicator"]');
+    if (statusIndicator) {
+        statusIndicator.classList.add('bg-yellow-500');
+        statusIndicator.title = '数据更新失败';
+    }
+}
+
+// 增加初始化状态标记（新增）
+let initializationCompleted = false;
+
 const StatsController = {
     // 防抖计时器
     updateTimer: null,
@@ -275,29 +778,30 @@ const StatsController = {
     // 统一的更新函数
     async update() {
         try {
-            const stats = await fetch("/stats/data").then(res => res.json());
-            
-            // 更新数据
-            updateNodeStats(stats);
-            this.updateNodesStatus(stats);
-            
-            // 触发更新完成事件
-            document.dispatchEvent(new Event('statsUpdateComplete'));
-            
-            // 只在实时排序开启时应用排序
-            if (document.getElementById('realtime-sort')?.checked) {
-                const currentSortBtn = document.querySelector('.sort-btn.active');
-                if (currentSortBtn) {
-                    const type = currentSortBtn.dataset.sort;
-                    const direction = currentSortBtn.dataset.direction || 'desc';
-                    applySort(type, direction);
-                }
+            // 在首次更新完成时标记（新增）
+            if (!initializationCompleted) {
+                await this.performInitialUpdate();
+                initializationCompleted = true;
             }
-            
-            this.lastUpdateTime = Date.now();
+            // WebSocket会自动更新数据，这里不需要额外的HTTP请求
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.warn('WebSocket未连接，尝试重新连接...');
+                initWebSocket();
+            }
         } catch (error) {
-            console.error('更新统计失败:', error);
+            console.error('更新失败:', error);
+            this.scheduleRetry();
         }
+    },
+    
+    performInitialUpdate() {
+        return new Promise(resolve => {
+            const listener = () => {
+                document.removeEventListener('statsSyncComplete', listener);
+                resolve();
+            };
+            document.addEventListener('statsSyncComplete', listener);
+        });
     },
     
     // 更新节点状态
@@ -326,15 +830,15 @@ const StatsController = {
                 if (settings.hideOffline && status === NodeStatus.OFFLINE) {
                     serverCard.style.display = 'none';
                 } else {
-                    // 更新卡片样式
-                    Object.values(NodeStyleConfig).forEach(config => {
-                        serverCard.classList.remove(config.card);
-                        serverCard.classList.remove(config.text);
-                    });
-                    if (styleConfig.card !== 'hidden') {
-                        serverCard.classList.add(styleConfig.card);
-                    }
-                    serverCard.style.display = styleConfig.card === 'hidden' ? 'none' : '';
+                // 更新卡片样式
+                Object.values(NodeStyleConfig).forEach(config => {
+                    serverCard.classList.remove(config.card);
+                    serverCard.classList.remove(config.text);
+                });
+                if (styleConfig.card !== 'hidden') {
+                    serverCard.classList.add(styleConfig.card);
+                }
+                serverCard.style.display = styleConfig.card === 'hidden' ? 'none' : '';
                 }
                 
                 // 更新文本元素
@@ -364,7 +868,7 @@ const StatsController = {
     
     // 更新仪表盘网络数据
     updateDashboardNetwork(netStats) {
-        // 更新实时带宽
+        // 更新实时带宽 - 桌面端
         const currentDownloadSpeed = document.getElementById('current-download-speed');
         const currentUploadSpeed = document.getElementById('current-upload-speed');
         if (currentDownloadSpeed) {
@@ -374,7 +878,17 @@ const StatsController = {
             currentUploadSpeed.textContent = strbps(netStats.uploadSpeed * 8);
                 }
 
-                // 更新总流量
+        // 更新实时带宽 - 移动端
+        const currentDownloadSpeedMobile = document.getElementById('current-download-speed-mobile');
+        const currentUploadSpeedMobile = document.getElementById('current-upload-speed-mobile');
+        if (currentDownloadSpeedMobile) {
+            currentDownloadSpeedMobile.textContent = strbps(netStats.downloadSpeed * 8);
+        }
+        if (currentUploadSpeedMobile) {
+            currentUploadSpeedMobile.textContent = strbps(netStats.uploadSpeed * 8);
+        }
+
+        // 更新总流量 - 桌面端
         const totalDownload = document.getElementById('total-download');
         const totalUpload = document.getElementById('total-upload');
         if (totalDownload) {
@@ -383,96 +897,133 @@ const StatsController = {
         if (totalUpload) {
             totalUpload.textContent = strB(netStats.totalUpload);
         }
+
+        // 更新总流量 - 移动端
+        const totalDownloadMobile = document.getElementById('total-download-mobile');
+        const totalUploadMobile = document.getElementById('total-upload-mobile');
+        if (totalDownloadMobile) {
+            totalDownloadMobile.textContent = strB(netStats.totalDownload);
+        }
+        if (totalUploadMobile) {
+            totalUploadMobile.textContent = strB(netStats.totalUpload);
+        }
     },
     
     // 更新单个卡片的数据
     updateCardData(card, node, status) {
-        const isOnline = status === NodeStatus.ONLINE;
+        if (!card || !node) {
+            console.warn('无效的卡片或节点数据');
+            return;
+        }
+
         const sid = card.dataset.sid;
-        
-        // 更新CPU数据
-        const cpuElement = card.querySelector('[id$="_CPU"]');
-        if (cpuElement) {
-            const cpuValue = isOnline ? (node.stat.cpu.multi * 100).toFixed(2) : '0';
-            cpuElement.textContent = cpuValue + '%';
-            cpuElement.dataset.cpu = cpuValue;
-            
-            const cpuProgress = card.querySelector('[id$="_CPU_progress"]');
-            if (cpuProgress) {
-                cpuProgress.style.width = `${cpuValue}%`;
-            }
+        if (!sid) {
+            console.warn('卡片缺少sid属性');
+            return;
         }
-        
-        // 更新内存数据
-        const memElement = card.querySelector('[id$="_MEM"]');
-        if (memElement) {
-            const memValue = isOnline && node.stat?.mem?.virtual ? 
-                ((node.stat.mem.virtual.used / node.stat.mem.virtual.total) * 100).toFixed(2) : '0';
-            memElement.textContent = memValue + '%';
-            memElement.dataset.memory = memValue;
-            
-            const memProgress = card.querySelector('[id$="_MEM_progress"]');
-            if (memProgress) {
-                memProgress.style.width = `${memValue}%`;
-            }
+
+        console.debug(`更新卡片 ${sid}:`, {
+            name: node.name,
+            status,
+            hasStats: node.stat ? 'yes' : 'no'
+        });
+
+        // 更新状态指示器
+        const style = NodeStyleConfig[status];
+        const indicator = card.querySelector('.status-indicator');
+        if (indicator) {
+            // 移除所有可能的状态类
+            Object.values(NodeStyleConfig).forEach(s => {
+                indicator.classList.remove(s.indicator);
+            });
+            indicator.classList.add(style.indicator);
+            indicator.setAttribute('title', style.title);
         }
-        
-        // 更新网络数据
-        if (isOnline && node.stat?.net) {
-            const elements = {
-                netIn: card.querySelector('[id$="_NET_IN"]'),
-                netOut: card.querySelector('[id$="_NET_OUT"]'),
-                netInTotal: card.querySelector('[id$="_NET_IN_TOTAL"]'),
-                netOutTotal: card.querySelector('[id$="_NET_OUT_TOTAL"]')
-            };
-            
-            // 更新下载速度
-            if (elements.netIn) {
-                const inSpeed = node.stat.net.delta?.in || 0;
-                elements.netIn.textContent = strbps(inSpeed * 8);
-                elements.netIn.dataset.speed = inSpeed;
+
+        // 更新卡片透明度
+        Object.values(NodeStyleConfig).forEach(s => {
+            card.classList.remove(s.card);
+        });
+        card.classList.add(style.card);
+
+        // 如果节点在线，更新统计数据
+        if (status === NodeStatus.ONLINE && node.stat) {
+            // CPU数据更新
+            const cpuEl = document.getElementById(`${sid}_CPU`);
+            if (cpuEl && node.stat.cpu) {
+                const cpuUsage = (node.stat.cpu * 100).toFixed(1);
+                cpuEl.style.width = `${cpuUsage}%`;
+                cpuEl.textContent = `${cpuUsage}%`;
+                updateTooltip(cpuEl, `CPU使用率: ${cpuUsage}%`);
             }
-            
-            // 更新上传速度
-            if (elements.netOut) {
-                const outSpeed = node.stat.net.delta?.out || 0;
-                elements.netOut.textContent = strbps(outSpeed * 8);
-                elements.netOut.dataset.speed = outSpeed;
+
+            // 内存数据更新
+            const memEl = document.getElementById(`${sid}_MEM`);
+            if (memEl && node.stat.mem) {
+                const memTotal = node.stat.mem.total;
+                const memUsed = node.stat.mem.used;
+                const memUsage = ((memUsed / memTotal) * 100).toFixed(1);
+                memEl.style.width = `${memUsage}%`;
+                memEl.textContent = `${memUsage}%`;
+                updateTooltip(memEl, `内存使用: ${strB(memUsed)} / ${strB(memTotal)}`);
             }
-            
-            // 更新总下载量
-            if (elements.netInTotal) {
-                const inTotal = node.stat.net.total?.in || 0;
-                elements.netInTotal.textContent = strB(inTotal);
-                elements.netInTotal.dataset.traffic = inTotal;
-            }
-            
-            // 更新总上传量
-            if (elements.netOutTotal) {
-                const outTotal = node.stat.net.total?.out || 0;
-                elements.netOutTotal.textContent = strB(outTotal);
-                elements.netOutTotal.dataset.traffic = outTotal;
+
+            // 网络数据更新
+            if (node.stat.net) {
+                const netStats = {
+                    in: node.stat.net.in || 0,
+                    out: node.stat.net.out || 0,
+                    total_in: node.stat.net.total_in || 0,
+                    total_out: node.stat.net.total_out || 0
+                };
+
+                // 更新网络速度
+                const netInEl = document.getElementById(`${sid}_NET_IN`);
+                const netOutEl = document.getElementById(`${sid}_NET_OUT`);
+                if (netInEl) {
+                    netInEl.textContent = strbps(netStats.in);
+                    updateTooltip(netInEl, `下载速度: ${strbps(netStats.in)}`);
+                }
+                if (netOutEl) {
+                    netOutEl.textContent = strbps(netStats.out);
+                    updateTooltip(netOutEl, `上传速度: ${strbps(netStats.out)}`);
+                }
+
+                // 更新总流量
+                const netInTotalEl = document.getElementById(`${sid}_NET_IN_TOTAL`);
+                const netOutTotalEl = document.getElementById(`${sid}_NET_OUT_TOTAL`);
+                if (netInTotalEl) {
+                    netInTotalEl.textContent = strB(netStats.total_in);
+                    updateTooltip(netInTotalEl, `总下载: ${strB(netStats.total_in)}`);
+                }
+                if (netOutTotalEl) {
+                    netOutTotalEl.textContent = strB(netStats.total_out);
+                    updateTooltip(netOutTotalEl, `总上传: ${strB(netStats.total_out)}`);
+                }
+
+                console.debug(`节点 ${sid} 网络数据已更新:`, netStats);
+            } else {
+                console.debug(`节点 ${sid} 无网络数据`);
             }
         } else {
-            // 节点离线时显示0
-            const elements = {
-                netIn: card.querySelector('[id$="_NET_IN"]'),
-                netOut: card.querySelector('[id$="_NET_OUT"]'),
-                netInTotal: card.querySelector('[id$="_NET_IN_TOTAL"]'),
-                netOutTotal: card.querySelector('[id$="_NET_OUT_TOTAL"]')
-            };
-            
-            if (elements.netIn) elements.netIn.textContent = '0 bps';
-            if (elements.netOut) elements.netOut.textContent = '0 bps';
-            if (elements.netInTotal) elements.netInTotal.textContent = '0 B';
-            if (elements.netOutTotal) elements.netOutTotal.textContent = '0 B';
+            // 节点离线，清空所有数据显示
+            const elements = ['CPU', 'MEM', 'NET_IN', 'NET_OUT', 'NET_IN_TOTAL', 'NET_OUT_TOTAL'];
+            elements.forEach(type => {
+                const el = document.getElementById(`${sid}_${type}`);
+                if (el) {
+                    if (type === 'CPU' || type === 'MEM') {
+                        el.style.width = '0%';
+                    }
+                    el.textContent = type.includes('NET') ? '0' : '0%';
+                    updateTooltip(el, '节点离线');
+                }
+            });
         }
-        
+
         // 更新到期时间
-        const expireElement = card.querySelector('[id$="_EXPIRE_TIME"]');
-        if (expireElement) {
-            expireElement.textContent = formatRemainingDays(node.expire_time);
-            expireElement.dataset.expire = node.expire_time || '0';
+        const expireEl = document.getElementById(`${sid}_expire`);
+        if (expireEl) {
+            expireEl.textContent = formatRemainingDays(node.expire_time);
         }
     },
     
@@ -510,127 +1061,243 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Tab切换功能
-function initTabs() {
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const groupViews = document.querySelectorAll('.group-view');
+/**
+ * 切换分组显示
+ * @param {string} groupId - 目标分组ID
+ */
+function switchGroup(groupId) {
+    // 1. 更新状态
+    currentGroupId = groupId;
     
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // 移除所有active状态
-            tabBtns.forEach(b => {
-                b.classList.remove('active');
-                b.classList.add('text-slate-400');
-                b.classList.remove('text-white', 'bg-slate-700/60', 'border-primary-500');
-                
-                // 重置计数器样式
-                const counter = b.querySelector('span:last-child');
-                if (counter) {
-                    counter.classList.remove('bg-slate-700/50', 'text-gray-200');
-                    counter.classList.add('bg-slate-800/50', 'text-gray-400');
-                }
-            });
-            
-            // 隐藏所有视图
-            groupViews.forEach(v => {
-                v.classList.add('hidden');
-                v.classList.remove('opacity-100');
-            });
-            
-            // 激活当前Tab
-            btn.classList.add('active');
-            btn.classList.remove('text-slate-400');
-            btn.classList.add('text-white', 'bg-slate-700/60', 'border-primary-500');
-            
-            // 更新计数器样式
-            const counter = btn.querySelector('span:last-child');
-            if (counter) {
-                counter.classList.remove('bg-slate-800/50', 'text-gray-400');
-                counter.classList.add('bg-slate-700/50', 'text-gray-200');
+    // 2. 获取所有分组视图
+    const allViews = document.querySelectorAll('.group-view');
+    const targetView = document.querySelector(`.group-view[data-group="${groupId}"]`);
+    
+    if (!targetView) {
+        console.error('目标分组视图未找到:', groupId);
+        return;
+    }
+
+    // 3. 切换前准备 - 设置绝对定位
+    allViews.forEach(view => {
+        if (!view.classList.contains('hidden')) {
+            const rect = view.getBoundingClientRect();
+            view.style.position = 'absolute';
+            view.style.top = `${rect.top}px`;
+            view.style.left = `${rect.left}px`;
+            view.style.width = `${rect.width}px`;
+            view.style.height = `${rect.height}px`;
+            view.style.zIndex = '1';
+        }
+    });
+    
+    // 4. 准备目标视图
+    targetView.classList.remove('hidden');
+    targetView.style.position = 'relative';
+    targetView.style.zIndex = '2';
+    targetView.style.opacity = '0';
+    
+    // 5. 执行切换
+    requestAnimationFrame(() => {
+        // 淡出当前视图
+        allViews.forEach(view => {
+            if (view !== targetView && !view.classList.contains('hidden')) {
+                view.style.opacity = '0';
+                view.addEventListener('transitionend', function handler() {
+                    view.classList.add('hidden');
+                    view.style.position = '';
+                    view.style.top = '';
+                    view.style.left = '';
+                    view.style.width = '';
+                    view.style.height = '';
+                    view.style.zIndex = '';
+                    view.removeEventListener('transitionend', handler);
+                }, { once: true });
             }
-            
-            // 显示对应视图
-            const groupId = btn.dataset.group;
-            const targetView = document.querySelector(`.group-view[data-group="${groupId}"]`);
-            if (targetView) {
-                targetView.classList.remove('hidden');
-                setTimeout(() => {
-                    targetView.classList.add('opacity-100');
-                }, 0);
-            }
-            
-            // 修改排序逻辑
-            if(document.getElementById('realtime-sort')?.checked) {
-                // 使用 setTimeout 确保视图更新后再排序
-                setTimeout(() => {
-                    applyCurrentSort();
-                }, 0);
+        });
+
+        // 淡入目标视图
+        requestAnimationFrame(() => {
+            targetView.style.opacity = '1';
+        });
+    });
+    
+    // 6. 更新Tab状态
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.group === groupId);
+    });
+    
+    // 7. 重新应用当前排序
+    if (window.currentSortConfig) {
+        applySort(window.currentSortConfig.type, window.currentSortConfig.direction);
+    }
+}
+
+function initTabs() {
+    // 获取所有tab按钮
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    
+    // 为每个按钮添加点击事件
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const groupId = button.getAttribute('data-group');
+            if (groupId) {
+                switchGroup(groupId);
             }
         });
     });
+
+    // 初始化时激活"全部"分组
+    switchGroup('all');
 }
 
-// 排序功能优化
+/**
+ * 应用排序
+ * @param {string} type - 排序类型
+ * @param {string} direction - 排序方向
+ */
 function applySort(type, direction) {
+    console.debug('执行排序:', { type, direction });
+    
     const activeTab = document.querySelector('.tab-btn.active');
-    if (!activeTab) return;
+    if (!activeTab) {
+        console.warn('未找到活动的标签页');
+        return;
+    }
     
     const activeGroupId = activeTab.dataset.group;
     const activeView = document.querySelector(`.group-view[data-group="${activeGroupId}"]`);
-    if (!activeView) return;
+    if (!activeView) {
+        console.warn('未找到活动的视图组');
+        return;
+    }
 
+    // 获取可见的卡片
     const cards = Array.from(activeView.querySelectorAll('.server-card')).filter(card => 
         card.style.display !== 'none'
     );
+    
+    console.debug('待排序的卡片数量:', cards.length);
 
-    // 排序函数
-    const sortFn = (a, b) => {
-        // 直接按指定条件排序，移除在线状态判断
-        let valueA, valueB;
-        
-        switch (type) {
+    // 保存拖拽相关的属性和事件
+    const preserveDragData = (card) => {
+        return {
+            dragData: card.getAttribute('draggable'),
+            dragEvents: card.getAttribute('data-has-drag-events') === 'true'
+        };
+    };
+
+    // 排序前保存所有卡片的拖拽状态
+    const dragStates = cards.map(card => ({
+        element: card,
+        state: preserveDragData(card)
+    }));
+
+    // 获取排序值的函数
+    const getSortValue = (card, type) => {
+        let value = 0;
+        switch(type) {
+            case 'default':
+                return Number(card.dataset.top || 0);
             case 'cpu':
-                valueA = parseFloat(a.querySelector('[id$="_CPU"]')?.dataset.cpu || 0);
-                valueB = parseFloat(b.querySelector('[id$="_CPU"]')?.dataset.cpu || 0);
+                value = Number(card.querySelector('[id$="_CPU"]')?.dataset.cpu || 0);
                 break;
             case 'memory':
-                valueA = parseFloat(a.querySelector('[id$="_MEM"]')?.dataset.memory || 0);
-                valueB = parseFloat(b.querySelector('[id$="_MEM"]')?.dataset.memory || 0);
-                break;
-            case 'total_traffic':
-                valueA = parseFloat(a.querySelector('[id$="_NET_IN_TOTAL"]')?.dataset.traffic || 0);
-                valueB = parseFloat(b.querySelector('[id$="_NET_IN_TOTAL"]')?.dataset.traffic || 0);
-                break;
-            case 'upload':
-                valueA = parseFloat(a.querySelector('[id$="_NET_OUT"]')?.dataset.speed || 0);
-                valueB = parseFloat(b.querySelector('[id$="_NET_OUT"]')?.dataset.speed || 0);
+                value = Number(card.querySelector('[id$="_MEM"]')?.dataset.memory || 0);
                 break;
             case 'download':
-                valueA = parseFloat(a.querySelector('[id$="_NET_IN"]')?.dataset.speed || 0);
-                valueB = parseFloat(b.querySelector('[id$="_NET_IN"]')?.dataset.speed || 0);
+                const downloadText = card.querySelector('[id$="_NET_IN"]')?.textContent || '0 bps';
+                value = parseNetworkValue(downloadText);
+                break;
+            case 'upload':
+                const uploadText = card.querySelector('[id$="_NET_OUT"]')?.textContent || '0 bps';
+                value = parseNetworkValue(uploadText);
                 break;
             case 'expiration':
-                valueA = parseInt(a.querySelector('[id$="_EXPIRE_TIME"]')?.dataset.expire || 0);
-                valueB = parseInt(b.querySelector('[id$="_EXPIRE_TIME"]')?.dataset.expire || 0);
-                break;
+                const expireText = card.querySelector('[id$="_EXPIRE_TIME"]')?.textContent;
+                if (expireText === '永久') return Number.MAX_SAFE_INTEGER;
+                if (expireText === '已过期') return -1;
+                if (expireText === '今日到期') return 0;
+                const days = parseInt(expireText.match(/\d+/)?.[0] || 0);
+                return days;
             default:
                 return 0;
         }
-        
-        if (isNaN(valueA)) valueA = direction === 'asc' ? Infinity : -Infinity;
-        if (isNaN(valueB)) valueB = direction === 'asc' ? Infinity : -Infinity;
-
-        return direction === 'asc' ? valueA - valueB : valueB - valueA;
+        return value;
     };
 
-    cards.sort(sortFn);
+    // 解析网络值的辅助函数
+    const parseNetworkValue = (text) => {
+        const match = text.match(/^([\d.]+)\s*(\w+)$/);
+        if (!match) return 0;
+        
+        const [_, value, unit] = match;
+        const numValue = parseFloat(value);
+        
+        switch(unit.toLowerCase()) {
+            case 'bps': return numValue;
+            case 'kbps': return numValue * 1000;
+            case 'mbps': return numValue * 1000000;
+            case 'gbps': return numValue * 1000000000;
+            case 'tbps': return numValue * 1000000000000;
+            default: return 0;
+        }
+    };
 
+    // 执行排序
+    cards.sort((a, b) => {
+        // 获取在线状态
+        const isOnlineA = a.querySelector('[id$="_status_indicator"]')?.classList.contains('bg-green-500') || false;
+        const isOnlineB = b.querySelector('[id$="_status_indicator"]')?.classList.contains('bg-green-500') || false;
+        
+        // 如果在线状态不同,在线的排在前面
+        if (isOnlineA !== isOnlineB) {
+            return isOnlineA ? -1 : 1;
+        }
+
+        // 如果是默认排序,只按top值排序
+        if (type === 'default') {
+            const topA = Number(a.dataset.top || 0);
+            const topB = Number(b.dataset.top || 0);
+            return direction === 'asc' ? topA - topB : topB - topA;
+        }
+
+        // 获取排序值
+        const valueA = getSortValue(a, type);
+        const valueB = getSortValue(b, type);
+
+        // 如果值相同,按top值排序
+        if (valueA === valueB) {
+            const topA = Number(a.dataset.top || 0);
+            const topB = Number(b.dataset.top || 0);
+            return topB - topA;
+        }
+
+        // 根据排序方向返回比较结果
+        return direction === 'asc' ? valueA - valueB : valueB - valueA;
+    });
+
+    // 获取正确的容器
     const container = activeGroupId === 'all' ? 
         activeView.querySelector('.grid') : 
         document.getElementById(`card-grid-${activeGroupId}`);
 
     if (container) {
+        console.debug('排序完成,更新DOM');
+        // 重新排序DOM元素
         cards.forEach(card => container.appendChild(card));
+        
+        // 恢复拖拽状态
+        dragStates.forEach(({element, state}) => {
+            if (state.dragData) {
+                element.setAttribute('draggable', state.dragData);
+            }
+            if (state.dragEvents) {
+                element.setAttribute('data-has-drag-events', 'true');
+            }
+        });
+    } else {
+        console.warn('未找到卡片容器');
     }
 }
 
@@ -641,46 +1308,78 @@ function applyCurrentSort() {
         const type = currentSortBtn.dataset.sort;
         const direction = currentSortBtn.dataset.direction || 'desc';
         applySort(type, direction);
-    } else {
-        // 如果没有激活的排序按钮，使用默认排序
-        applySort(SortConfig.defaultType, SortConfig.defaultDirection);
     }
 }
 
 // 初始化排序按钮事件
 function initSortButtons() {
-    document.querySelectorAll('.sort-btn').forEach(btn => {
+    const sortButtons = document.querySelectorAll('.sort-btn');
+    console.debug('初始化排序按钮:', sortButtons.length);
+    
+    // 设置默认排序按钮
+    const defaultSortBtn = document.querySelector('[data-sort="default"]');
+    if (defaultSortBtn) {
+        defaultSortBtn.classList.add('active');
+        defaultSortBtn.dataset.direction = 'desc';
+        defaultSortBtn.querySelector('i').textContent = 'expand_more';
+        console.debug('已设置默认排序按钮:', defaultSortBtn.dataset.sort);
+        
+        // 初始化时执行一次默认排序
+        applySort('default', 'desc');
+    } else {
+        console.warn('未找到默认排序按钮');
+    }
+    
+    sortButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.sort;
-            let direction = btn.dataset.direction;
+            let direction = btn.dataset.direction || SortConfig.directions[type] || SortConfig.defaultDirection;
             
-            // 如果是首次点击，使用预设的方向
-            if (!direction) {
-                direction = SortConfig.directions[type] || 'desc';
-            } else {
-                // 已有方向则切换
-                direction = direction === 'asc' ? 'desc' : 'asc';
-            }
+            console.debug('排序按钮点击:', { type, direction });
             
+            // 切换排序方向
+            direction = direction === 'asc' ? 'desc' : 'asc';
             btn.dataset.direction = direction;
             
             // 更新按钮状态
-            document.querySelectorAll('.sort-btn').forEach(b => {
+            sortButtons.forEach(b => {
                 b.classList.remove('active');
-                b.querySelector('i').textContent = 'unfold_more';
+                const icon = b.querySelector('i');
+                if (icon) icon.textContent = 'unfold_more';
             });
             
             btn.classList.add('active');
-            btn.querySelector('i').textContent = direction === 'asc' ? 'expand_less' : 'expand_more';
+            const icon = btn.querySelector('i');
+            if (icon) {
+                icon.textContent = direction === 'asc' ? 'expand_less' : 'expand_more';
+            }
             
-            // 点击时总是执行一次排序，不管实时排序是否开启
+            // 执行排序
             applySort(type, direction);
         });
     });
+
+    // 实时排序复选框事件
+    const realtimeSort = document.getElementById('realtime-sort');
+    if (realtimeSort) {
+        realtimeSort.checked = true;
+        console.debug('已启用实时排序');
+        realtimeSort.addEventListener('change', () => {
+            console.debug('实时排序设置变更:', realtimeSort.checked);
+            if (realtimeSort.checked) {
+                applyCurrentSort();
+            }
+        });
+    } else {
+        console.warn('未找到实时排序复选框');
+    }
 }
 
 // 添加设置变更监听
 document.addEventListener('DOMContentLoaded', () => {
+    // 初始化排序按钮
+    initSortButtons();
+    
     // 加载保存的设置
     const settings = loadSettings();
     
@@ -705,5 +1404,8 @@ document.addEventListener('DOMContentLoaded', () => {
             StatsController.update();
         });
     }
+    
+    // 应用初始排序
+    applyCurrentSort();
 });
 

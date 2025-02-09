@@ -132,115 +132,197 @@ function clearAllData() {
 
 // 从 URL 获取节点 ID
 function getNodeIdFromUrl() {
-    const path = window.location.pathname;
-    const matches = path.match(/\/stats\/([^\/]+)/);
-    return matches ? matches[1] : null;
+    try {
+        const path = window.location.pathname;
+        // 优先使用正则匹配
+        const matches = path.match(/\/stats\/([^\/]+)/);
+        if (matches) return matches[1];
+        
+        // 备用方案：分割路径
+        const parts = path.split('/');
+        const lastPart = parts[parts.length - 1];
+        return lastPart || null;
+    } catch (error) {
+        console.error('Error getting node ID:', error);
+        return null;
+    }
 }
 
-async function get(){
-    try {
-        const nodeId = getNodeIdFromUrl();
-        if (!nodeId) {
-            console.error('No node ID found in URL');
-            clearAllData();
-            return;
-        }
+/**
+ * 验证系统数据
+ * @param {Object} data - 原始数据
+ * @param {string} nodeId - 节点ID
+ * @returns {Object|null} - 验证后的数据或null
+ */
+function validateSystemData(data, nodeId) {
+    // 基础验证
+    if (!data || typeof data !== 'object') {
+        console.warn('Invalid data format');
+        return null;
+    }
 
-        const response = await fetch("/stats/data");
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        
-        // 检查数据结构
-        if (!data || typeof data !== 'object') {
-            console.error('Invalid data format:', data);
-            clearAllData();
-            return;
-        }
+    // 节点数据验证
+    const node = data[nodeId];
+    if (!node || !node.stat) {
+        console.warn(`No stat data for node: ${nodeId}`);
+        return null;
+    }
 
-        // 获取特定节点的数据
-        const node = data[nodeId];
-        if (!node || !node.stat) {
-            console.error('No stats available for node:', nodeId);
-            clearAllData();
-            return;
-        }
-        
-        const {cpu, mem, net, host} = node.stat;
-        
-        // 更新 CPU 信息
-        if (cpu) {
-            updateText('CPU', (cpu.multi*100).toFixed(2)+'%');
-            if (cpu.single) {
-                cpu.single.forEach((usage, index) => {
-                    updateProgress(`CPU${index + 1}_progress`, usage*100);
-                });
+    // 允许部分数据缺失，返回有效数据
+    return {
+        cpu: node.stat.cpu,
+        mem: node.stat.mem,
+        net: node.stat.net,
+        host: node.stat.host
+    };
+}
+
+/**
+ * 更新CPU信息
+ * @param {Object} cpu - CPU数据
+ */
+function updateCPUInfo(cpu) {
+    if (!cpu) return;
+    
+    if (typeof cpu.multi === 'number') {
+        updateText('CPU', (cpu.multi*100).toFixed(2)+'%');
+    }
+    
+    if (Array.isArray(cpu.single)) {
+        cpu.single.forEach((usage, index) => {
+            if (typeof usage === 'number') {
+                updateProgress(`CPU${index + 1}_progress`, usage*100);
+            }
+        });
+    }
+}
+
+/**
+ * 更新内存信息
+ * @param {Object} mem - 内存数据
+ */
+function updateMemInfo(mem) {
+    if (!mem) return;
+    
+    if (mem.virtual) {
+        const {used: vUsed = 0, total: vTotal = 0} = mem.virtual;
+        const vUsage = vTotal ? vUsed/vTotal : 0;
+        updateText('MEM', (vUsage*100).toFixed(2)+'%');
+        updateProgress('MEM_progress', vUsage*100);
+    }
+    
+    if (mem.swap) {
+        const {used: sUsed = 0, total: sTotal = 0} = mem.swap;
+        const sUsage = sTotal ? sUsed/sTotal : 0;
+        updateProgress('SWAP_progress', sUsage*100);
+    }
+    
+    const memTooltip = `virtual: ${strB(mem.virtual?.used || 0)}/${strB(mem.virtual?.total || 0)}\nswap: ${strB(mem.swap?.used || 0)}/${strB(mem.swap?.total || 0)}`;
+    updateTooltip('MEM_item', memTooltip);
+}
+
+/**
+ * 更新网络信息
+ * @param {Object} net - 网络数据
+ */
+function updateNetInfo(net) {
+    if (!net) return;
+    
+    // 更新总体网络统计
+    if (net.delta) {
+        updateText('NET_IN', strbps(net.delta.in || 0));
+        updateText('NET_OUT', strbps(net.delta.out || 0));
+    }
+    
+    if (net.total) {
+        updateText('NET_IN_TOTAL', strB(net.total.in || 0));
+        updateText('NET_OUT_TOTAL', strB(net.total.out || 0));
+    }
+    
+    // 更新各设备网络信息
+    if (net.devices) {
+        for (const [device, Net] of Object.entries(net.devices)) {
+            if (Net.delta) {
+                updateText(`net_${device}_delta_in`, strbps(Net.delta.in || 0));
+                updateText(`net_${device}_delta_out`, strbps(Net.delta.out || 0));
+            }
+            if (Net.total) {
+                updateText(`net_${device}_total_in`, strB(Net.total.in || 0));
+                updateText(`net_${device}_total_out`, strB(Net.total.out || 0));
             }
         }
-        
-        // 更新内存信息
-        if (mem) {
-            if (mem.virtual) {
-                const {used: vUsed, total: vTotal} = mem.virtual;
-                const vUsage = vTotal ? vUsed/vTotal : 0;
-                updateText('MEM', (vUsage*100).toFixed(2)+'%');
-                updateProgress('MEM_progress', vUsage*100);
-            }
-            
-            if (mem.swap) {
-                const {used: sUsed, total: sTotal} = mem.swap;
-                const sUsage = sTotal ? sUsed/sTotal : 0;
-                updateProgress('SWAP_progress', sUsage*100);
-            }
-            
-            const memTooltip = `virtual: ${strB(mem.virtual?.used || 0)}/${strB(mem.virtual?.total || 0)}\nswap: ${strB(mem.swap?.used || 0)}/${strB(mem.swap?.total || 0)}`;
-            updateTooltip('MEM_item', memTooltip);
-        }
-        
-        // 更新网络信息
-        if (net) {
-            if (net.delta) {
-                updateText('NET_IN', strbps(net.delta.in || 0));
-                updateText('NET_OUT', strbps(net.delta.out || 0));
-            }
-            if (net.total) {
-                updateText('NET_IN_TOTAL', strB(net.total.in || 0));
-                updateText('NET_OUT_TOTAL', strB(net.total.out || 0));
-            }
-            
-            // 更新网络设备信息
-            if (net.devices) {
-                for (const [device, Net] of Object.entries(net.devices)) {
-                    if (Net.delta) {
-                        updateText(`net_${device}_delta_in`, strbps(Net.delta.in || 0));
-                        updateText(`net_${device}_delta_out`, strbps(Net.delta.out || 0));
-                    }
-                    if (Net.total) {
-                        updateText(`net_${device}_total_in`, strB(Net.total.in || 0));
-                        updateText(`net_${device}_total_out`, strB(Net.total.out || 0));
-                    }
-                }
-            }
-        }
-        
-        // 更新主机信息
-        if (host) {
-            const hostContent = 
+    }
+}
+
+/**
+ * 更新主机信息
+ * @param {Object} host - 主机数据
+ */
+function updateHostInfo(host) {
+    if (!host) return;
+    
+    const hostContent = 
 `系统: ${host.os || 'Unknown'}
 平台: ${host.platform || 'Unknown'}
 内核版本: ${host.kernelVersion || 'Unknown'}
 内核架构: ${host.kernelArch || 'Unknown'}
 启动: ${host.bootTime ? new Date(host.bootTime*1000).toLocaleString() : 'Unknown'}
 在线: ${host.uptime ? (host.uptime/86400).toFixed(2) : '0.00'}天`;
-            updateTooltip('host', hostContent);
-        }
+    
+    updateTooltip('host', hostContent);
+}
 
-        // 更新系统信息
-        updateSystemInfo(data);
+/**
+ * 处理错误
+ * @param {Error|string} error - 错误信息
+ * @param {boolean} clearData - 是否清除数据
+ */
+function handleError(error, clearData = true) {
+    console.error('System stats error:', error);
+    if (clearData) clearAllData();
+}
+
+/**
+ * 更新系统组件
+ * @param {Object} data - 系统数据
+ */
+function updateSystemComponents(data) {
+    const components = [
+        { name: 'cpu', updater: updateCPUInfo },
+        { name: 'mem', updater: updateMemInfo },
+        { name: 'net', updater: updateNetInfo },
+        { name: 'host', updater: updateHostInfo }
+    ];
+
+    components.forEach(({ name, updater }) => {
+        if (data[name]) {
+            try {
+                updater(data[name]);
+            } catch (error) {
+                console.warn(`Error updating ${name}:`, error);
+            }
+        }
+    });
+}
+
+async function get(){
+    try {
+        const nodeId = getNodeIdFromUrl();
+        if (!nodeId) return handleError('No node ID found');
+
+        const response = await fetch("/stats/data");
+        if (!response.ok) return handleError(`HTTP error: ${response.status}`);
+
+        const data = await response.json();
+        const validData = validateSystemData(data, nodeId);
+        
+        if (validData) {
+            updateSystemComponents(validData);
+        } else {
+            handleError('Invalid system data');
+        }
     } catch (error) {
-        console.error('Error fetching stats:', error);
-        clearAllData();
+        handleError(error);
     }
 }
 
