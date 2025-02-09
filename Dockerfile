@@ -4,7 +4,17 @@ WORKDIR /app
 COPY . ./
 RUN npm install
 
-FROM node:18-buster-slim
+# 使用 debian:bullseye-slim 作为基础镜像，它包含更新版本的 GLIBC
+FROM debian:bullseye-slim
+
+# 安装 Node.js 和必要的依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 从构建阶段复制文件
