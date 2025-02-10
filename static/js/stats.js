@@ -124,11 +124,18 @@ let currentGroupId = 'all';  // 跟踪当前分组
                 }
 
                 // 4.5 更新总体统计显示
-                updateTotalStats(totals);
+                updateTotalStats({
+                    ...totals,
+                    nodes: data,  // 保持原始节点数据
+                    rawData: data // 添加原始数据用于地区统计
+                });
 
                 // 4.6 更新节点显示
                 Object.entries(data).forEach(([sid, node]) => {
-                    updateNodeDisplay(sid, node);
+                    updateNodeDisplay(sid, {
+                        ...node,
+                        expire_time: node.expire_time // 确保到期时间数据传递
+                    });
                 });
 
                 // 4.7 如果启用了实时排序，重新应用排序
@@ -232,7 +239,7 @@ function formatRemainingDays(expireTimestamp) {
     } else if (remainingDays === 0) {
         return '今日到期';
     }
-    return `剩余 ${remainingDays} 天`;
+    return ` ${remainingDays} 天`;
 }
 
 // 使用原生 JavaScript 获取元素
@@ -678,7 +685,10 @@ function updateTotalStats(totals) {
 
         // 2. 确保所有数值有效
         const stats = {
-            nodes: Math.max(0, Number(totals.nodes) || 0),
+            // 兼容两种格式：直接数字或对象格式
+            nodes: typeof totals.nodes === 'object' ? 
+                  Object.keys(totals.nodes || {}).length : 
+                  Math.max(0, Number(totals.nodes) || 0),
             online: Math.max(0, Number(totals.online) || 0),
             offline: Math.max(0, Number(totals.offline) || 0),
             download: Math.max(0, Number(totals.download) || 0),
@@ -686,6 +696,13 @@ function updateTotalStats(totals) {
             downloadTotal: Math.max(0, Number(totals.downloadTotal) || 0),
             uploadTotal: Math.max(0, Number(totals.uploadTotal) || 0)
         };
+
+        // 添加调试日志
+        console.debug('节点统计:', {
+            总节点数: stats.nodes,
+            在线节点: stats.online,
+            离线节点: stats.offline
+        });
 
         // 3. 更新桌面端显示
         const elements = {
@@ -695,7 +712,9 @@ function updateTotalStats(totals) {
             currentNetIn: document.getElementById('current-download-speed'),
             currentNetOut: document.getElementById('current-upload-speed'),
             totalNetIn: document.getElementById('total-download'),
-            totalNetOut: document.getElementById('total-upload')
+            totalNetOut: document.getElementById('total-upload'),
+            expiringNodes: document.getElementById('expiring-nodes'),
+            regionStats: document.getElementById('region-stats')
         };
 
         // 4. 更新移动端显示
@@ -706,26 +725,93 @@ function updateTotalStats(totals) {
             currentNetIn: document.getElementById('current-download-speed-mobile'),
             currentNetOut: document.getElementById('current-upload-speed-mobile'),
             totalNetIn: document.getElementById('total-download-mobile'),
-            totalNetOut: document.getElementById('total-upload-mobile')
+            totalNetOut: document.getElementById('total-upload-mobile'),
+            regionStats: document.getElementById('region-stats-mobile')
         };
 
-        // 5. 更新显示
+        // 5. 更新基础统计 - 添加空值检查和调试日志
         [elements, mobileElements].forEach(els => {
-            // 更新节点统计
-            if (els.totalNodes) els.totalNodes.textContent = stats.nodes;
+            if (els.totalNodes) {
+                els.totalNodes.textContent = stats.nodes;
+                console.debug('更新节点总数:', {
+                    元素ID: els.totalNodes.id,
+                    更新值: stats.nodes
+                });
+            } else {
+                console.warn('未找到节点总数显示元素');
+            }
             if (els.onlineNodes) els.onlineNodes.textContent = stats.online;
             if (els.offlineNodes) els.offlineNodes.textContent = stats.offline;
-
-            // 更新实时带宽 (转换为 bits per second)
             if (els.currentNetIn) els.currentNetIn.textContent = strbps(stats.download * 8);
             if (els.currentNetOut) els.currentNetOut.textContent = strbps(stats.upload * 8);
-
-            // 更新总流量
             if (els.totalNetIn) els.totalNetIn.textContent = strB(stats.downloadTotal);
             if (els.totalNetOut) els.totalNetOut.textContent = strB(stats.uploadTotal);
         });
 
-        // 6. 更新分组统计
+        // 6. 计算即将到期的节点和地区分布
+        const now = Math.floor(Date.now() / 1000);
+        const sevenDaysFromNow = now + (7 * 24 * 60 * 60);
+        let expiringCount = 0;
+        const regionStats = new Map();
+        
+        // 7. 处理每个节点
+        Object.entries(totals.nodes || {}).forEach(([sid, node]) => {
+            // 跳过非节点数据
+            if (!node || typeof node !== 'object' || !node.name) return;
+            
+            // 检查到期时间
+            if (node.expire_time && node.expire_time > now && node.expire_time <= sevenDaysFromNow) {
+                expiringCount++;
+            }
+            
+            // 统计地区分布(仅统计在线节点)
+            const isOnline = node.stat && typeof node.stat === 'object' && !node.stat.offline;
+            if (isOnline && node.data?.location?.country) {
+                const country = node.data.location.country;
+                const key = country.code;
+                if (!regionStats.has(key)) {
+                    regionStats.set(key, {
+                        code: key,
+                        name: country.name_zh || country.name,
+                        flag: country.flag || '🏳️',
+                        count: 0
+                    });
+                }
+                regionStats.get(key).count++;
+            }
+        });
+
+        // 8. 获取前9个地区
+        const topRegions = Array.from(regionStats.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 9);
+
+        // 9. 更新地区统计
+        if (elements.regionStats) {
+            elements.regionStats.innerHTML = topRegions.map(region => `
+                
+                <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1">
+                    <div class="flex items-center min-w-0">
+                        <span class="text-sm mr-1">${region.flag}</span>
+                        <span class="text-xs font-medium">${region.code}</span>
+                        <span class="text-xs font-bold ml-1">${region.count}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+        if (mobileElements.regionStats) {
+            mobileElements.regionStats.innerHTML = topRegions.map(region => `
+                <div class="flex items-center justify-between bg-white/5 rounded px-0.5 py-0.5">
+                    <div class="flex items-center gap-0.5 min-w-0">
+                        <span class="text-xs">${region.flag}</span>
+                        <span class="text-[10px] text-gray-200">${region.code}</span>
+                    </div>
+                    <span class="text-[10px] font-medium text-gray-200">${region.count}</span>
+                </div>
+            `).join('');
+        }
+
+        // 10. 更新分组统计和到期时间显示
         if (totals.groups) {
             Object.entries(totals.groups).forEach(([groupId, groupStats]) => {
                 const countElement = document.getElementById(`group-${groupId}-count-tab`);
@@ -735,12 +821,19 @@ function updateTotalStats(totals) {
             });
         }
 
-        // 7. 调试日志
+        // 更新到期时间显示
+        if (elements.expiringNodes) {
+            elements.expiringNodes.textContent = expiringCount;
+        }
+
+        // 11. 调试日志
         if (window.setting?.debug) {
             console.debug('更新总体统计:', {
                 nodes: stats.nodes,
                 online: stats.online,
                 offline: stats.offline,
+                expiringCount,
+                topRegions,
                 currentDownload: strbps(stats.download * 8),
                 currentUpload: strbps(stats.upload * 8),
                 totalDownload: strB(stats.downloadTotal),
@@ -1333,15 +1426,10 @@ function initSortButtons() {
     sortButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.sort;
-            let direction = btn.dataset.direction || SortConfig.directions[type] || SortConfig.defaultDirection;
+            let direction = !btn.classList.contains('active') ? 'desc' : 
+                           (btn.dataset.direction === 'asc' ? 'desc' : 'asc');
             
-            console.debug('排序按钮点击:', { type, direction });
-            
-            // 切换排序方向
-            direction = direction === 'asc' ? 'desc' : 'asc';
             btn.dataset.direction = direction;
-            
-            // 更新按钮状态
             sortButtons.forEach(b => {
                 b.classList.remove('active');
                 const icon = b.querySelector('i');
@@ -1354,7 +1442,6 @@ function initSortButtons() {
                 icon.textContent = direction === 'asc' ? 'expand_less' : 'expand_more';
             }
             
-            // 执行排序
             applySort(type, direction);
         });
     });

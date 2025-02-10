@@ -105,16 +105,13 @@ h3 .material-icons,
                 <!-- 左侧主机信息 -->
                 <div class="flex items-center gap-3">
                     <i class="material-icons text-blue-500/70">dns</i>
-                    <h2 class="text-lg font-medium text-gray-200 truncate">{{node.name}}</h2>
-                    <span class="text-sm text-gray-400">(主机名: <span id="system-hostname"></span>)</span>
+                    <h2 class="text-base sm:text-lg font-medium text-gray-200 truncate">{{node.name}}</h2>
+                    <span class="text-xs sm:text-sm text-gray-400">(主机名: <span id="system-hostname"></span>)</span>
                 </div>
             </div>
             
-            <!-- 操作按钮区域 -->
-            <div class="flex items-center space-x-1 action-icon">
-                <button id="host" class="p-2 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-md transition-colors">
-                    <i class="material-icons">info_outline</i>
-                </button>
+            <div class="flex-shrink-0 flex items-center space-x-1 md:space-x-2 action-icon min-w-fit">
+               
                 {%if admin%}
                 <a href="/admin/servers/{{sid}}/" class="p-2 text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-md transition-colors">
                     <i class="material-icons">edit</i>

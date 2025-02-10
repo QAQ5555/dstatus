@@ -7,66 +7,7 @@
     <!-- 仪表盘区域 -->
     {% include "stats/dashboard.html" %}
 
-    <!-- Tab导航栏 - 紧凑设计 -->
-    <div class="bg-white/5 backdrop-blur-sm rounded-lg border border-gray-700/50 mt-3">
-        <!-- 移动端更紧凑的设计 -->
-        <div class="flex items-center p-2 overflow-x-auto hide-scrollbar">
-            <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="all">
-                <i class="material-icons text-base">dns</i>
-                <span class="ml-1.5">全部节点</span>
-            </button>
-            
-            {% for group in groups %}
-            <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="{{group.id}}">
-                <i class="material-icons text-base">folder</i>
-                <span class="ml-1.5">{{group.name}}</span>
-                <span class="ml-1.5 px-1.5 text-xs bg-slate-700/40 rounded-full">{{group.server_count}}</span>
-            </button>
-            {% endfor %}
-            
-            <!-- 管理按钮 -->
-            <div class="flex items-center ml-auto">
-                <button class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full">
-                    <i class="material-icons text-base">add</i>
-                    <span class="ml-1.5 hidden sm:inline">新增节点</span>
-                </button>
-                <button class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full ml-1">
-                    <i class="material-icons text-base">folder</i>
-                    <span class="ml-1.5 hidden sm:inline">分组管理</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- 排序工具栏 - 集成到Tab导航栏中 -->
-        <div class="border-t border-gray-700/50 p-2">
-            <div class="flex items-center">
-                <span class="text-gray-400 text-sm mr-2">排序:</span>
-                <!-- 统一使用按钮组，通过响应式设计控制显示 -->
-                <div class="flex flex-wrap gap-2 overflow-x-auto">
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 hidden sm:inline" data-sort="default">
-                        <span class="text-sm sm:text-base">默认</span>
-                        <i class="material-icons text-base sm:text-lg ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60" data-sort="cpu">
-                        <span class="text-sm sm:text-base">CPU</span>
-                        <i class="material-icons text-base sm:text-lg ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60" data-sort="memory">
-                        <span class="text-sm sm:text-base">内存</span>
-                        <i class="material-icons text-base sm:text-lg ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60" data-sort="download">
-                        <span class="text-sm sm:text-base">下载</span>
-                        <i class="material-icons text-base sm:text-lg ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 hidden sm:inline" data-sort="upload">
-                        <span class="text-sm sm:text-base">上传</span>
-                        <i class="material-icons text-base sm:text-lg ml-1">unfold_more</i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+ 
 
     <!-- 服务器卡片网格 -->
     <div class="mt-3" id="groups-container">
@@ -86,10 +27,38 @@
                         </div>
                         <h3 class="font-medium text-sm text-gray-200 truncate">
                             <a href="/stats/{{sid}}/" class="hover:text-primary-400">{{node.name}}</a>
-                        </h3>
+                            <span>到期时间：</span>
+                            <span id="{{sid}}_EXPIRE_TIME" class="text-gray-200 {% if node.stat and not node.stat.offline %}{% else %}text-gray-400{% endif %}" 
+                                  data-expire="{{node.expire_time|default(0)}}"> 
+                                {{node.expire}}
+                       </h3>
                     </div>
+                    
+                    
+                    {% if node.data.location and node.data.location.country %}
+                    <div class="flex items-center gap-1">
+                        <span class="country-name text-xs text-gray-400 hidden sm:inline">
+                            {{node.data.location.country.code}}
+                        </span>
+                        <span class="country-flag text-lg" title="{{node.data.location.country.name_zh}}">
+                            {{node.data.location.country.flag}}
+                        </span>
+                      
+                    </div>
+                    {% else %}
+                    <div class="flex items-center gap-1">
+                        <span class="country-flag text-lg" title="获取位置信息">
+                            🌐
+                        </span>
+                        <span class="country-name text-xs text-gray-400 hidden sm:inline">
+                            获取中...
+                        </span>
+                    </div>
+                    {% endif %}
+                    
                     {%if admin%}
                     <a class="p-1 text-gray-400 hover:text-gray-200 rounded-md transition-colors" 
+                
                        href="/admin/servers/{{sid}}/">
                         <i class="material-icons text-base">edit</i>
                     </a>
@@ -177,7 +146,7 @@
 
         <!-- 分组视图容器 -->
         <div class="group-view transition-all duration-300 ease-in-out" data-group="all">
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {%for sid, node in stats%}
                     {{ server_card(sid, node) }}
                 {% endfor %}
@@ -186,7 +155,7 @@
         
         {% for group in groups %}
         <div class="group-view hidden transition-all duration-300 ease-in-out opacity-0" data-group="{{group.id}}">
-            <div id="card-grid-{{group.id}}" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div id="card-grid-{{group.id}}" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {%for sid, node in stats%}
                 {% if node.group_id == group.id %}
                     {{ server_card(sid, node, group.id) }}

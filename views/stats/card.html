@@ -8,66 +8,7 @@
     <!-- 仪表盘区域 -->
     {% include "stats/dashboard.html" %}
 
-    <!-- Tab导航栏 - 紧凑设计 -->
-    <div class="bg-white/5 backdrop-blur-sm rounded-lg border border-gray-700/50 mt-3">
-        <!-- 移动端更紧凑的设计 -->
-        <div class="flex items-center p-2 overflow-x-auto hide-scrollbar">
-            <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="all">
-                <i class="material-icons text-base">dns</i>
-                <span class="ml-1.5">全部节点</span>
-            </button>
-            
-            {% for group in groups %}
-            <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="{{group.id}}">
-                <i class="material-icons text-base">folder</i>
-                <span class="ml-1.5">{{group.name}}</span>
-                <span class="ml-1.5 px-1.5 text-xs bg-slate-700/40 rounded-full">{{group.server_count}}</span>
-            </button>
-            {% endfor %}
-            
-            <!-- 管理按钮 -->
-            <div class="flex items-center ml-auto">
-                <button class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full">
-                    <i class="material-icons text-base">add</i>
-                    <span class="ml-1.5 hidden sm:inline">新增节点</span>
-                </button>
-                <button class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full ml-1">
-                    <i class="material-icons text-base">folder</i>
-                    <span class="ml-1.5 hidden sm:inline">分组管理</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- 排序工具栏 - 集成到Tab导航栏中 -->
-        <div class="border-t border-gray-700/50 p-2">
-            <div class="flex items-center">
-                <span class="text-gray-400 text-sm mr-2">排序:</span>
-                <!-- 统一使用按钮组，通过响应式设计控制显示 -->
-                <div class="flex flex-wrap gap-2 overflow-x-auto">
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 hidden sm:inline" data-sort="default">
-                        <span >默认</span>
-                        <i class="material-icons text-base ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60" data-sort="cpu">
-                        <span>CPU</span>
-                        <i class="material-icons text-base ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 " data-sort="memory">
-                        <span>内存</span>
-                        <i class="material-icons text-base ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60" data-sort="download">
-                        <span>下载</span>
-                        <i class="material-icons text-base ml-1">unfold_more</i>
-                    </button>
-                    <button class="sort-btn flex items-center px-3 h-8 text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 hidden sm:inline" data-sort="upload">
-                        <span>上传</span>
-                        <i class="material-icons text-base ml-1">unfold_more</i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+   
 
     <!-- 分组内容区域 -->
     <div class="mt-4" id="groups-container">
@@ -90,12 +31,27 @@
                         <!-- 服务器名称和操作按钮 -->
                         <div class="server-card-handle flex items-center justify-between mb-4 cursor-move group">
                             <div class="flex items-center gap-2">
-                                <i class="material-icons md-16 text-gray-400">dns</i>
-                                <div class="flex items-center gap-2">
-                                    <h3 class="server-name font-medium text-gray-200 {% if node.stat and not node.stat.offline %}{% else %}text-gray-400{% endif %}" title="{{node.name}}">
+ <!-- 添加国家信息显示 -->
+                        
+                                 <div class="flex items-center justify-center gap-2">
+                                    <h3 class="server-name font-medium text-gray-200 {% if node.stat and not node.stat.offline %}{% else %}text-gray-400{% endif %} text-center" title="{{node.name}}">
+                                        {% if node.data.location and node.data.location.country %}
+                                            <span class="country-flag text-xl" title="{{node.data.location.country.name_zh}}">
+                                                {{node.data.location.country.flag}}
+                                            </span>
+                                            {{node.data.location.country.code}}-
+                                        {% else %}
+                                            <span class="country-flag text-lg" title="获取位置信息">
+                                                🌐
+                                            </span>
+                                            <span class="country-name text-xs text-gray-400 hidden sm:inline">
+                                                获取中...
+                                            </span>
+                                        {% endif %}
                                         <a href="/stats/{{sid}}/" class="hover:text-primary-400">{{node.name}}</a>
                                     </h3>
                                     <!-- 状态信息 -->
+                                    
                                     <div class="flex items-center gap-1" id="{{sid}}_status_container">
                                         <div class="w-2.5 h-2.5 rounded-full {% if node.stat and not node.stat.offline %}bg-green-500{% else %}bg-red-500{% endif %}" 
                                              id="{{sid}}_status_indicator" 
@@ -105,9 +61,9 @@
                                 </div>
                             </div>
                             <div class="flex gap-2">
-                                <button class="text-gray-400 hover:text-gray-200" id="{{sid}}_host">
-                                    <i class="material-icons md-16">info_outline</i>
-                                </button>
+                               
+
+                                
                                 {%if admin%}
                                 <a class="text-gray-400 hover:text-gray-200" href="/admin/servers/{{sid}}/">
                                     <i class="material-icons md-16">edit</i>
@@ -182,7 +138,7 @@
                             <!-- 到期时间 -->
                             <div class="flex items-center gap-1 text-sm text-gray-400">
                                 <i class="material-icons md-14">access_time</i>
-                                <span>到期时间：</span>
+                                <span>到期：</span>
                                 <span id="{{sid}}_EXPIRE_TIME" class="text-gray-200 {% if node.stat and not node.stat.offline %}{% else %}text-gray-400{% endif %}" 
                                       data-expire="{{node.expire_time|default(0)}}">
                                     {{node.expire}}
@@ -222,12 +178,25 @@
                         <!-- 服务器名称和操作按钮 -->
                         <div class="server-card-handle flex items-center justify-between mb-4 cursor-move group">
                             <div class="flex items-center gap-2">
-                                <i class="material-icons md-16 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">drag_indicator</i>
-                                <i class="material-icons md-16 text-gray-400">dns</i>
+                                
                                 <div class="flex items-center gap-2">
-                                    <h3 class="server-name font-medium text-gray-200 {% if node.stat and not node.stat.offline %}{% else %}text-gray-400{% endif %}" title="{{node.name}}">
-                                        <a href="/stats/{{sid}}/" class="hover:text-primary-400">{{node.name}}</a>
-                                    </h3>
+                                  
+                                    <!-- 添加国家信息显示 -->
+                                    {% if node.data.location and node.data.location.country %}
+                                    <span class="country-flag text-xl" title="{{node.data.location.country.name_zh}}">
+                                        {{node.data.location.country.flag}}
+                                    </span>
+                                    {{node.data.location.country.code}}-
+                                {% else %}
+                                    <span class="country-flag text-lg" title="获取位置信息">
+                                        🌐
+                                    </span>
+                                    <span class="country-name text-xs text-gray-400 hidden sm:inline">
+                                        获取中...
+                                    </span>
+                                {% endif %}
+                                <a href="/stats/{{sid}}/" class="hover:text-primary-400">{{node.name}}</a>
+                            </h3>
                                     <!-- 状态信息 -->
                                     <div class="flex items-center gap-1" id="{{sid}}_status_container">
                                         <div class="w-2.5 h-2.5 rounded-full {% if node.stat and not node.stat.offline %}bg-green-500{% else %}bg-red-500{% endif %}" 

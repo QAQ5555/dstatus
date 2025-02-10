@@ -216,6 +216,27 @@ function updateInstallStatus(status) {
     }
 }
 
+// 添加自动安装处理函数
+async function handleInstallation(sid) {
+    try {
+        showInstallModal('正在安装探针', '准备安装...');
+        const res = await postjson(`/admin/servers/${sid}/init`);
+        
+        if (res.status) {
+            notice('服务器添加成功，探针已安装', 'success');
+        } else {
+            notice('服务器已添加，但探针安装失败：' + res.data, 'info');
+        }
+        setTimeout(() => location.href = '/admin/servers', 1000);
+    } catch (error) {
+        console.error('探针安装失败:', error);
+        notice('服务器已添加，但探针安装失败，您可以稍后手动安装', 'info');
+        setTimeout(() => location.href = '/admin/servers', 1000);
+    } finally {
+        hideInstallModal();
+    }
+}
+
 // 修改现有的 add 函数
 async function add() {
     try {

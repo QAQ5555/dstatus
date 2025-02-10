@@ -1263,6 +1263,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// 拖拽排序开关控制
+document.addEventListener('DOMContentLoaded', () => {
+    const dragSortToggle = document.getElementById('enable-drag-sort');
+    if (dragSortToggle) {
+        // 从localStorage读取之前的状态
+        const isDragEnabled = localStorage.getItem('dragSortEnabled') === 'true';
+        dragSortToggle.checked = isDragEnabled;
+
+        // 根据开关状态初始化或禁用拖拽功能
+        if (isDragEnabled) {
+            DragManager.init();
+        }
+
+        // 监听开关变化
+        dragSortToggle.addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            localStorage.setItem('dragSortEnabled', enabled);
+            
+            if (enabled) {
+                DragManager.init();
+                notice('已启用拖拽排序功能');
+            } else {
+                DragManager.destroy();
+                notice('已禁用拖拽排序功能');
+            }
+        });
+    }
+});
+
 // 导出接口
 window.DragManager = DragManager;
 window.StateManager = StateManager;

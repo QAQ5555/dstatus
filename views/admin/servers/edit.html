@@ -281,11 +281,11 @@ function initForm(server) {
     document.getElementById('edit_api_port').value = server.data.api?.port || '';
 
     // 流量设置
-    document.getElementById('edit_traffic_limit').value = bytesToGB(server.traffic_limit);
+    document.getElementById('edit_traffic_limit').value = TrafficFormat.bytesToGB(server.traffic_limit);
     document.getElementById('edit_traffic_reset_day').value = server.traffic_reset_day || 1;
     document.getElementById('edit_traffic_alert_percent').value = server.traffic_alert_percent || 80;
     document.getElementById('edit_traffic_calibration_date').value = timestampToDate(server.traffic_calibration_date);
-    document.getElementById('edit_traffic_calibration_value').value = bytesToGB(server.traffic_calibration_value);
+    document.getElementById('edit_traffic_calibration_value').value = TrafficFormat.bytesToGB(server.traffic_calibration_value);
 }
 
 // 编辑服务器
@@ -295,46 +295,48 @@ async function edit() {
         
         // 基础数据验证
         const name = V('edit_name');
-        if (!name) {
-            notice('服务器名称不能为空', 'error');
+        const host = V('edit_ssh_host');
+        
+        if (!name || !host) {
+            notice('服务器名称和IP地址不能为空', 'error');
             return;
         }
 
         // 构造服务器配置数据
         const serverData = {
             ssh: {
-                host: V('edit_ssh_host'),
+                host: host,
                 port: parseInt(V('edit_ssh_port')) || 22,
                 username: V('edit_ssh_username'),
                 password: V('edit_ssh_password'),
                 pri: V('edit_ssh_pri')
             },
             api: {
-                key: V('edit_api_key'),
+                key: V('edit_api_key') || '',
                 port: parseInt(V('edit_api_port')) || 8080
             },
-            device: V('edit_device')
+            device: V('edit_device') || ''
         };
 
         // 构造请求数据
         const requestData = {
             name,
-            data: JSON.stringify(serverData),  // 确保 data 是字符串
+            data: JSON.stringify(serverData),
             status: parseInt(V('edit_status')),
             top: parseInt(V('edit_top')) || 0,
             expire_time: V('edit_expire_time') ? 
                 Math.floor(new Date(V('edit_expire_time') + ' 23:59:59').getTime() / 1000) : 
                 null,
-            traffic_limit: gbToBytes(V('edit_traffic_limit')),
+            traffic_limit: TrafficFormat.gbToBytes(V('edit_traffic_limit')),
             traffic_reset_day: parseInt(V('edit_traffic_reset_day')) || 1,
             traffic_alert_percent: parseInt(V('edit_traffic_alert_percent')) || 80,
             traffic_calibration_date: V('edit_traffic_calibration_date') ? 
                 Math.floor(new Date(V('edit_traffic_calibration_date')).getTime() / 1000) : 
                 null,
-            traffic_calibration_value: gbToBytes(V('edit_traffic_calibration_value'))
+            traffic_calibration_value: TrafficFormat.gbToBytes(V('edit_traffic_calibration_value'))
         };
 
-        console.log('提交的数据:', requestData);  // 调试日志
+        console.log('提交的数据:', requestData);
         
         const sid = V('sid');
         const res = await postjson(`/admin/servers/${sid}/edit`, requestData);
@@ -343,11 +345,17 @@ async function edit() {
             notice('保存成功', 'success');
             setTimeout(() => location.href = '/admin/servers', 1000);
         } else {
-            notice(res.data || '保存失败', 'error');
+            notice(res.data || '保存失败，请检查必填项', 'error');
         }
     } catch (error) {
         console.error('保存失败:', error);
-        notice('保存失败: ' + (error.message || '未知错误'), 'error');
+        // 优化错误提示
+        if (error.message && error.message.includes('handleInstallation')) {
+            notice('保存成功，但自动安装失败。您可以稍后手动安装。', 'info');
+            setTimeout(() => location.href = '/admin/servers', 1000);
+        } else {
+            notice('保存失败: 请确保服务器名称和IP地址已填写', 'error');
+        }
     } finally {
         endloading();
     }

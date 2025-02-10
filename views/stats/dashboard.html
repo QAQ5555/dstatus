@@ -3,11 +3,21 @@
 <div class="hidden sm:grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
     <!-- 节点情况卡片 -->
     <div class="dashboard-card bg-white/5 backdrop-blur-sm rounded-lg border border-gray-700/50 p-4">
-        <div class="flex items-center gap-2 mb-4">
-            <i class="material-icons text-gray-400">hub</i>
-            <h2 class="text-lg font-medium text-gray-200">节点情况</h2>
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <i class="material-icons text-gray-400">hub</i>
+                <h2 class="text-lg font-medium text-gray-200">节点情况</h2>
+            </div>
+            <!-- 即将到期提醒 -->
+            <div class="flex items-center gap-1">
+                <i class="material-icons text-yellow-500/70 text-sm">warning</i>
+                <span class="text-sm text-gray-200" id="expiring-nodes">0</span>
+                <span class="text-xs text-gray-400">即将到期</span>
+            </div>
         </div>
-        <div class="grid grid-cols-3 gap-4">
+
+        <!-- 节点统计 -->
+        <div class="grid grid-cols-3 gap-4 ">
             <div class="text-center">
                 <div class="text-2xl font-semibold text-gray-200" id="total-nodes">0</div>
                 <div class="text-sm text-gray-400">总节点</div>
@@ -21,10 +31,33 @@
                 <div class="text-sm text-gray-400">离线节点</div>
             </div>
         </div>
+       
+        <!-- 地区分布 -->
+        <div class="mt-3 mb-2 border-t border-gray-700/50 relative">
+        </div>
+        <div class="grid grid-cols-6 lg:grid-cols-8 gap-x-1.5 gap-y-1" id="region-stats">
+            <!-- 预占位元素，避免加载时布局跳动 -->
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">
+                <div class="flex items-center min-w-0">
+                    <span class="text-sm mr-1">🏳️</span>
+                    <span class="text-xs font-medium">XX</span>
+                    <span class="text-xs font-bold ml-1">0</span>
+                </div>
+            </div>
+            <!-- 重复8次预占位 -->
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+            <div class="w-[65px] flex items-center justify-between bg-slate-800 rounded-full px-2 py-1 opacity-0">...</div>
+        </div>
     </div>
 
     <!-- 网络情况卡片 -->
     <div class="dashboard-card bg-white/5 backdrop-blur-sm rounded-lg border border-gray-700/50 p-4">
+       
         <div class="flex items-center gap-2 mb-4">
             <i class="material-icons text-gray-400">network_check</i>
             <h2 class="text-lg font-medium text-gray-200">网络情况</h2>
@@ -36,14 +69,14 @@
                     <i class="material-icons text-gray-400">speed</i>
                     <span class="text-sm text-gray-400">实时带宽</span>
                 </div>
-                <div class="flex items-center gap-6">
-                    <div class="flex items-center gap-1.5">
-                        <i class="material-icons text-green-500/70 text-sm">arrow_downward</i>
-                        <span class="text-xl font-medium text-gray-200" id="current-download-speed">0.00 bps</span>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <i class="material-icons text-green-500/70 text-sm flex-shrink-0">arrow_downward</i>
+                        <span class="text-base sm:text-xl font-medium text-gray-150 truncate" id="current-download-speed">0.00 bps</span>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                        <i class="material-icons text-blue-500/70 text-sm">arrow_upward</i>
-                        <span class="text-xl font-medium text-gray-200" id="current-upload-speed">0.00 bps</span>
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <i class="material-icons text-blue-500/70 text-sm flex-shrink-0">arrow_upward</i>
+                        <span class="text-base sm:text-xl font-medium text-gray-150 truncate" id="current-upload-speed">0.00 bps</span>
                     </div>
                 </div>
             </div>
@@ -122,4 +155,119 @@
             </div>
         </div>
     </div>
-</div> 
+
+    <!-- 分隔线 -->
+    <div class="h-px bg-gray-700/50 my-1"></div>
+
+    <!-- 第三行: 地区分布 -->
+    <div class="grid grid-cols-4 sm:grid-cols-6 gap-x-1 gap-y-1" id="region-stats-mobile">
+        <!-- 动态生成的地区统计 -->
+    </div>
+</div>
+ <!-- Tab导航栏 - 紧凑设计 -->
+ <div class="bg-white/5 backdrop-blur-sm rounded-lg border border-gray-700/50 mt-3">
+    <!-- 分组和管理按钮区域 -->
+    <div class="flex flex-col sm:flex-row">
+        <!-- 分组标签滚动区域 -->
+        <div class="flex-1 p-2 overflow-x-auto hide-scrollbar">
+            <div class="flex items-center min-w-0">
+                <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="all">
+                    <i class="material-icons text-base">dns</i>
+                    <span class="ml-1.5">全部节点</span>
+                </button>
+                
+                {% for group in groups %}
+                <button class="tab-btn shrink-0 flex items-center px-3 h-8 text-sm text-slate-400 bg-slate-800/40 rounded-full mr-2 hover:bg-slate-700/60" data-group="{{group.id}}">
+                    <i class="material-icons text-base">folder</i>
+                    <span class="ml-1">{{group.name}}</span>
+                    <span class="ml-1 px-1 text-xs bg-slate-700/40 rounded-full">{{group.server_count}}</span>
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 管理按钮区域 - 移动端显示在底部，桌面端显示在右侧 -->
+        {%if admin%}
+        <div class="flex items-center justify-end p-2 border-t sm:border-t-0 sm:border-l border-gray-700/50">
+            <div class="flex items-center space-x-2">
+                <a href="/admin/servers/add" class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full">
+                    <i class="material-icons text-base">add</i>
+                    <span class="ml-1.5 text-xs sm:text-sm">新增</span>
+                </a>
+                <a href="/admin/groups" class="flex items-center px-3 h-8 text-sm text-gray-400 hover:text-gray-200 hover:bg-white/5 rounded-full">
+                    <i class="material-icons text-base">folder</i>
+                    <span class="ml-1.5 text-xs sm:text-sm">分组</span>
+                </a>
+                <!-- 拖拽排序开关 -->
+                <div class="flex items-center px-2 h-8 text-sm text-gray-400">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="enable-drag-sort" class="sr-only peer">
+                        <div class="relative w-8 sm:w-9 h-4 sm:h-5 bg-gray-700 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 sm:after:h-4 after:w-3 sm:after:w-4 after:transition-all"></div>
+                        <span class="ml-1.5 text-xs sm:text-sm">排序</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        {%endif%}
+    </div>
+
+    <!-- 排序工具栏 -->
+    <div class="border-t border-gray-700/50 p-2 overflow-x-auto hide-scrollbar">
+        <div class="flex items-center min-w-0">
+            <span class="text-gray-400 text-xs sm:text-sm mr-2 shrink-0">排序:</span>
+            <div class="flex gap-2">
+                <button class="sort-btn flex items-center px-3 h-8 text-xs sm:text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 shrink-0" data-sort="default">
+                    <span>默认</span>
+                    <i class="material-icons text-base ml-1">unfold_more</i>
+                </button>
+                <button class="sort-btn flex items-center px-3 h-8 text-xs sm:text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 shrink-0" data-sort="cpu">
+                    <span>CPU</span>
+                    <i class="material-icons text-base ml-1">unfold_more</i>
+                </button>
+                <button class="sort-btn flex items-center px-3 h-8 text-xs sm:text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 shrink-0" data-sort="memory">
+                    <span>内存</span>
+                    <i class="material-icons text-base ml-1">unfold_more</i>
+                </button>
+                <button class="sort-btn flex items-center px-3 h-8 text-xs sm:text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 shrink-0" data-sort="download">
+                    <span>下载</span>
+                    <i class="material-icons text-base ml-1">unfold_more</i>
+                </button>
+                <button class="sort-btn flex items-center px-3 h-8 text-xs sm:text-sm text-gray-400 bg-slate-800/40 rounded-full hover:bg-slate-700/60 shrink-0" data-sort="upload">
+                    <span>上传</span>
+                    <i class="material-icons text-base ml-1">unfold_more</i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+/* 地区统计卡片样式 */
+.region-stat-card {
+    @apply transition-all duration-200;
+}
+
+.region-stat-card:hover {
+    @apply bg-white/10;
+}
+
+/* 移动端优化 */
+@media (max-width: 640px) {
+    .dashboard-stats {
+        @apply grid-cols-1;
+    }
+    
+    .region-stats-mobile {
+        @apply -mx-2;  /* 负边距实现全宽滚动 */
+    }
+}
+
+/* 滚动条美化 */
+.hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+</style> 

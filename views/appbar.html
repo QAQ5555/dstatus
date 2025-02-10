@@ -38,7 +38,7 @@
                 
                 <!-- 视图切换按钮 -->
                 {%if title=='节点状态'%}
-                <a href="?theme={%if theme=='list'%}card{%else%}list{%endif%}" class="nav-link group flex">
+                <a href="/?theme={%if theme=='list'%}card{%else%}list{%endif%}" class="nav-link group flex">
                     <div class="px-4 py-2 rounded-md flex items-center space-x-2">
                         <i class="material-icons text-[20px] transition-colors">{%if theme=='list'%}grid_view{%else%}list{%endif%}</i>
                         <span class="hidden md:block text-sm font-medium">{%if theme=='list'%}卡片视图{%else%}列表视图{%endif%}</span>
