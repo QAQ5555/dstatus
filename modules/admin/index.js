@@ -219,12 +219,10 @@ module.exports = function(app) {
             fs.copyFileSync(file.tempFilePath, dbPath);
             console.log('已替换数据库文件');
 
-            // 4. 发送成功响应
-            res.json(pr(1, "数据库恢复成功，系统即将重启"));
+            // 4. 发送成功响应，提示用户手动重启
+            res.json(pr(1, "数据库恢复成功，请手动重启系统以使更改生效"));
 
-            // 5. 执行重启
-            await app.locals.RestartManager.restart();
-
+            // 不再自动重启
         } catch (error) {
             console.error('恢复过程出错:', error);
             // 如果出错，尝试恢复备份

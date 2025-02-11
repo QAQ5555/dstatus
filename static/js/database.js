@@ -51,114 +51,56 @@ window.DatabaseManager = {
             const result = await response.json();
 
             if (result.status) {
-                this.showState('restore');
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // 显示恢复成功状态
+                this.showState('success');
                 
-                this.showState('restart');
+                // 更新状态消息，提示手动重启
+                const restartMessage = `
+                    <div class="space-y-3">
+                        <p>数据库恢复成功！</p>
+                        <p>请按照以下方式手动重启系统：</p>
+                        
+                        <div class="space-y-2">
+                            <p>1. 如果使用PM2：</p>
+                            <pre class="bg-slate-800 px-3 py-2 rounded font-mono text-sm">pm2 restart nekonekostatus</pre>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <p>2. 如果使用Forever：</p>
+                            <pre class="bg-slate-800 px-3 py-2 rounded font-mono text-sm">forever restart nekonekostatus.js</pre>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <p>3. 如果使用Docker：</p>
+                            <pre class="bg-slate-800 px-3 py-2 rounded font-mono text-sm">docker restart dstatus</pre>
+                        </div>
+                        
+                        <div class="space-y-2">
+                            <p>4. 其他情况：</p>
+                            <p class="text-sm">请直接重启应用</p>
+                        </div>
+                        
+                        <p class="text-yellow-400 mt-4">重启后系统将加载新的数据库内容。</p>
+                    </div>
+                `;
                 
-                // 等待服务器关闭
-                await this.waitForServerDown();
-                console.log('服务器已关闭，等待重启...');
-                
-                // 等待服务器重启
-                await this.waitForServerUp();
-                console.log('服务器已重启，准备显示完成状态...');
-                
-                // 显示完成状态
-                this.showCompleted();
-                
-                // 延迟刷新页面，给用户时间查看完成状态
-                setTimeout(() => {
-                    window.location.reload();
-                }, 3000);
+                this.updateRestartStatus(restartMessage);
             } else {
                 this.showError(result.data);
             }
         } catch (error) {
             console.error('恢复过程出错:', error);
-            if (error.message.includes('重启超时')) {
-                this.showError('服务器重启超时，请手动刷新页面');
-            } else {
-                this.showError('恢复过程出错: ' + error.message);
-            }
+            this.showError('恢复过程出错: ' + error.message);
         }
-    },
-
-    /**
-     * 等待服务器关闭
-     */
-    async waitForServerDown() {
-        let attempts = 0;
-        const maxAttempts = 30;
-        const interval = 500; // 缩短检查间隔到500ms
-        
-        while (attempts < maxAttempts) {
-            try {
-                const response = await fetch('/health');
-                if (!response.ok) {
-                    return true; // 服务器返回错误状态也认为是已关闭
-                }
-                await new Promise(resolve => setTimeout(resolve, interval));
-                attempts++;
-            } catch (e) {
-                // 服务器已关闭
-                return true;
-            }
-        }
-        throw new Error('等待服务器关闭超时');
-    },
-
-    /**
-     * 等待服务器恢复
-     */
-    async waitForServerUp() {
-        let attempts = 0;
-        const maxAttempts = 60;
-        const interval = 1000;
-        let lastError = null;
-        
-        const checkServer = async () => {
-            try {
-                const response = await fetch('/health');
-                if (response.ok) {
-                    const data = await response.json();
-                    return data.status === 'ok';
-                }
-                return false;
-            } catch (e) {
-                lastError = e;
-                return false;
-            }
-        };
-
-        while (attempts < maxAttempts) {
-            this.updateRestartStatus(`正在等待服务器恢复... (${attempts}/${maxAttempts})`);
-            
-            if (await checkServer()) {
-                // 服务器恢复后，等待一段时间确保应用完全启动
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                // 再次确认服务器状态
-                if (await checkServer()) {
-                    this.updateRestartStatus('服务器已恢复，正在刷新页面...');
-                    return true;
-                }
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, interval));
-            attempts++;
-        }
-        
-        throw new Error(`服务器重启超时 ${lastError ? ': ' + lastError.message : ''}`);
     },
 
     /**
      * 更新重启状态显示
      */
     updateRestartStatus(message) {
-        const statusElement = document.getElementById('restartStatus');
-        if (statusElement) {
-            statusElement.textContent = message;
+        const messageElement = document.getElementById('restartMessage');
+        if (messageElement) {
+            messageElement.innerHTML = message;
         }
     },
 
