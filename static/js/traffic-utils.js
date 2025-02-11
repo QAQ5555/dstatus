@@ -361,20 +361,30 @@ function updateTrafficElements(data) {
 
         // 2. 更新显示
         if (elements.used) {
-            const formattedUsed = formatTraffic(data.traffic_used * 1024 * 1024 * 1024);
-            elements.used.textContent = formattedUsed;
+            // traffic_used 已经是GB单位，转换为字节用于显示
+            const usedBytes = Math.floor(data.traffic_used * 1024 * 1024 * 1024);
+            console.log('[Traffic Utils] 流量转换:', {
+                originalGB: data.traffic_used,
+                convertedBytes: usedBytes,
+                formatted: formatTraffic(usedBytes)
+            });
+            elements.used.textContent = formatTraffic(usedBytes);
         }
 
         if (elements.remaining) {
-            const formattedRemaining = data.traffic_remaining === -1 ? '∞' : 
-                formatTraffic(data.traffic_remaining * 1024 * 1024 * 1024);
-            elements.remaining.textContent = formattedRemaining;
+            if (data.traffic_remaining === -1) {
+                elements.remaining.textContent = '∞';
+            } else {
+                elements.remaining.textContent = formatTraffic(data.traffic_remaining);
+            }
         }
 
         if (elements.limit) {
-            const formattedLimit = data.traffic_limit ? 
-                formatTraffic(data.traffic_limit * 1024 * 1024 * 1024) : '∞';
-            elements.limit.textContent = formattedLimit;
+            if (!data.traffic_limit) {
+                elements.limit.textContent = '∞';
+            } else {
+                elements.limit.textContent = formatTraffic(data.traffic_limit);
+            }
         }
 
         // 3. 更新进度条 - 使用 TrafficManager 的状态
@@ -485,8 +495,8 @@ function calculateLastResetDate(now, resetDay) {
  * @param {Array} params.trafficData ds数据数组 [[入站,出站,时间戳],...]
  * @param {number} params.resetDay 重置日
  * @param {number} params.calibrationDate 校准日期
- * @param {number} params.calibrationValue 校准值
- * @returns {number} 已用流量
+ * @param {number} params.calibrationValue 校准值(bytes)
+ * @returns {number} 已用流量(GB)
  */
 function calculateUsedTraffic({trafficData, resetDay, calibrationDate, calibrationValue}) {
     console.log('[Traffic Utils] 计算已用流量, 参数:', {
@@ -494,6 +504,7 @@ function calculateUsedTraffic({trafficData, resetDay, calibrationDate, calibrati
         resetDay,
         calibrationDate,
         calibrationValue,
+        calibrationValueGB: calibrationValue / (1024 * 1024 * 1024),
         trafficDataSample: trafficData?.[trafficData?.length - 1]
     });
 
@@ -506,37 +517,54 @@ function calculateUsedTraffic({trafficData, resetDay, calibrationDate, calibrati
     // 2. 计算重置日期
     const now = new Date();
     const lastResetDate = calculateLastResetDate(now, resetDay);
+    const lastResetTimestamp = Math.floor(lastResetDate.getTime() / 1000);
     console.log('[Traffic Utils] 上次重置日期:', lastResetDate);
     
     // 3. 初始化总流量
-    let totalTraffic = 0;
-    
-    // 4. 如果有校准值且校准日期在重置日期之后，使用校准值作为基准
-    if (calibrationDate && calibrationDate > lastResetDate.getTime()/1000) {
-        totalTraffic = calibrationValue;
-        console.log('[Traffic Utils] 使用校准值作为基准:', calibrationValue);
-    }
-    
-    // 5. 累加所有流量数据
     let totalBytes = 0;
-    for (const record of trafficData) {
-        if (Array.isArray(record) && record.length >= 2) {
-            const inbound = validateTrafficValue(record[0]);
-            const outbound = validateTrafficValue(record[1]);
-            totalBytes += (inbound + outbound);
+    
+    // 4. 处理流量数据
+    if (calibrationDate && calibrationDate > lastResetTimestamp) {
+        // 4.1 如果有校准值且在重置日期之后
+        // calibrationValue 已经是字节单位，直接使用
+        totalBytes = calibrationValue;
+        
+        // 只累加校准日期之后的流量
+        for (const record of trafficData) {
+            if (Array.isArray(record) && record.length >= 3) {
+                const timestamp = record[2];
+                if (timestamp > calibrationDate) {
+                    const inbound = validateTrafficValue(record[0]);
+                    const outbound = validateTrafficValue(record[1]);
+                    totalBytes += (inbound + outbound);
+                }
+            }
+        }
+    } else {
+        // 4.2 如果没有校准值或校准日期在重置日期之前
+        // 累加重置日期之后的所有流量
+        for (const record of trafficData) {
+            if (Array.isArray(record) && record.length >= 3) {
+                const timestamp = record[2];
+                if (timestamp > lastResetTimestamp) {
+                    const inbound = validateTrafficValue(record[0]);
+                    const outbound = validateTrafficValue(record[1]);
+                    totalBytes += (inbound + outbound);
+                }
+            }
         }
     }
     
-    // 6. 将字节转换为GB
-    totalTraffic = Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2));
+    // 5. 将字节转换为GB并保留两位小数
+    const totalTrafficGB = Number((totalBytes / (1024 * 1024 * 1024)).toFixed(2));
     
     console.log('[Traffic Utils] 流量计算结果:', {
         totalBytes,
-        totalTrafficGB: totalTraffic,
+        totalTrafficGB,
         formatted: formatTraffic(totalBytes)
     });
     
-    return totalTraffic;
+    return totalTrafficGB;
 }
 
 /**

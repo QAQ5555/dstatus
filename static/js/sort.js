@@ -337,19 +337,182 @@ const DragManager = {
     initRetries: 0,
     maxRetries: 5,
     retryDelay: 1000,
-
-    init() {
-        // 注释掉初始化逻辑（关键修改）
-        // this.createSortables(this.getContainers());
-        
-        // 添加调试信息
-        console.log('拖拽初始化已禁用');
+    
+    // 添加全局状态检查
+    isDragEnabled() {
+        const dragSortToggle = document.getElementById('enable-drag-sort');
+        return dragSortToggle && dragSortToggle.checked && !dragSortToggle.disabled;
     },
 
-    // 保留其他方法，但禁用实际功能
+    init() {
+        // 检查拖拽是否启用
+        if (!this.isDragEnabled()) {
+            console.log('拖拽功能已禁用');
+            this.destroy(); // 确保清理任何可能的实例
+            return;
+        }
+        
+        this.createSortables(this.getContainers());
+    },
+
     createSortables(containers) {
-        console.log('拖拽功能已禁用');
-        return [];
+        // 如果拖拽被禁用，直接返回
+        if (!this.isDragEnabled()) {
+            return [];
+        }
+        
+        containers.forEach(grid => {
+            if (this.sortableInstances.has(grid)) {
+                this.sortableInstances.get(grid).destroy();
+                this.sortableInstances.delete(grid);
+            }
+            
+            const groupId = grid.closest('.group-view')?.dataset.group;
+            const isAllView = groupId === 'all';
+            
+            // 确保所有卡片的 draggable 属性正确设置
+            grid.querySelectorAll('.server-card').forEach(card => {
+                card.draggable = this.isDragEnabled();
+            });
+            
+            const sortable = new Sortable(grid, {
+                ...SortableConfig.base,
+                animation: 150,
+                delay: 50,
+                delayOnTouchOnly: true,
+                
+                // 根据不同视图设置不同的排序权限
+                sort: isAllView, // 只在全部视图允许排序
+                group: {
+                    name: 'servers',
+                    pull: !isAllView, // 分组视图允许拖出
+                    put: !isAllView  // 分组视图允许放入
+                },
+                
+                ghostClass: "sortable-ghost",
+                chosenClass: "sortable-chosen",
+                dragClass: "sortable-drag",
+                
+                swapThreshold: 0.65,
+                invertSwap: true,
+                direction: 'vertical',
+                
+                // 添加拖拽前的状态检查
+                onStart: (evt) => {
+                    if (!this.isDragEnabled()) {
+                        evt.preventDefault();
+                        return false;
+                    }
+                    const item = evt.item;
+                    const container = evt.from;
+                    const fromGroupId = container.closest('.group-view')?.dataset.group;
+                    
+                    // 记录开始拖拽的位置
+                    DragState.drag = {
+                        ...DragState.drag,
+                        startIndex: Array.from(container.children).indexOf(item),
+                        sourceGroup: fromGroupId
+                    };
+                    
+                    // 添加视觉反馈
+                    requestAnimationFrame(() => {
+                        item.style.opacity = '0.95';
+                        item.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                    });
+                },
+                
+                onMove: (evt, originalEvent) => {
+                    if (!this.isDragEnabled()) {
+                        return false;
+                    }
+                    const { dragged, related, to, from } = evt;
+                    const toGroupId = to.closest('.group-view')?.dataset.group;
+                    const fromGroupId = from.closest('.group-view')?.dataset.group;
+                    
+                    // 禁止在分组视图内排序
+                    if (!isAllView && toGroupId === fromGroupId) {
+                        return false;
+                    }
+                    
+                    // 禁止从其他视图拖入全部视图
+                    if (toGroupId === 'all' && fromGroupId !== 'all') {
+                        return false;
+                    }
+                    
+                    // 计算移动方向
+                    const dragRect = dragged.getBoundingClientRect();
+                    const relatedRect = related.getBoundingClientRect();
+                    const moveUp = dragRect.top < relatedRect.top;
+                    
+                    // 为其他卡片添加移动动画
+                    Array.from(to.children).forEach(child => {
+                        if (child === dragged) return;
+                        
+                        const childRect = child.getBoundingClientRect();
+                        if (moveUp && childRect.top > dragRect.top && childRect.top < relatedRect.top) {
+                            child.style.transform = 'translateY(calc(100% + 1rem))';
+                            child.classList.add('moving');
+                        } else if (!moveUp && childRect.top < dragRect.top && childRect.top > relatedRect.top) {
+                            child.style.transform = 'translateY(calc(-100% - 1rem))';
+                            child.classList.add('moving');
+                        } else {
+                            child.style.transform = '';
+                            child.classList.remove('moving');
+                        }
+                    });
+                    
+                    return true;
+                },
+                
+                onEnd: async (evt) => {
+                    const { item, to, from } = evt;
+                    const toGroupId = to.closest('.group-view')?.dataset.group;
+                    const fromGroupId = from.closest('.group-view')?.dataset.group;
+                    
+                    // 移除所有动画类
+                    Array.from(to.children).forEach(child => {
+                        child.style.transform = '';
+                        child.style.transition = '';
+                        child.classList.remove('moving');
+                    });
+                    
+                    // 移除拖动样式
+                    item.style.opacity = '';
+                    item.style.backgroundColor = '';
+                    
+                    if (!evt.to) return;
+                    
+                    try {
+                        // 添加插入动画
+                        item.classList.add('card-inserted');
+                        setTimeout(() => item.classList.remove('card-inserted'), 150);
+                        
+                        // 如果是全部视图的排序，或者是跨组拖拽
+                        if ((toGroupId === 'all' && fromGroupId === 'all') || toGroupId !== fromGroupId) {
+                            await this.updateCardPosition(item, toGroupId, to);
+                        } else {
+                            // 如果是组内拖拽，回滚到原始位置
+                            const children = Array.from(from.children);
+                            if (DragState.drag.startIndex < children.length) {
+                                from.insertBefore(item, children[DragState.drag.startIndex]);
+                            } else {
+                                from.appendChild(item);
+                            }
+                        }
+                    } catch (error) {
+                        // 如果更新失败，回滚到原始位置
+                        const children = Array.from(from.children);
+                        if (DragState.drag.startIndex < children.length) {
+                            from.insertBefore(item, children[DragState.drag.startIndex]);
+                        } else {
+                            from.appendChild(item);
+                        }
+                    }
+                }
+            });
+            
+            this.sortableInstances.set(grid, sortable);
+        });
     },
 
     async waitForTabActivation() {
@@ -546,6 +709,10 @@ const DragManager = {
                 direction: 'vertical',
                 
                 onStart: (evt) => {
+                    if (!this.isDragEnabled()) {
+                        evt.preventDefault();
+                        return false;
+                    }
                     const item = evt.item;
                     const container = evt.from;
                     const fromGroupId = container.closest('.group-view')?.dataset.group;
@@ -565,6 +732,9 @@ const DragManager = {
                 },
                 
                 onMove: (evt, originalEvent) => {
+                    if (!this.isDragEnabled()) {
+                        return false;
+                    }
                     const { dragged, related, to, from } = evt;
                     const toGroupId = to.closest('.group-view')?.dataset.group;
                     const fromGroupId = from.closest('.group-view')?.dataset.group;
@@ -836,6 +1006,11 @@ const DragManager = {
                 }
             });
             this.sortableInstances.clear();
+
+            // 移除所有卡片的 draggable 属性
+            document.querySelectorAll('.server-card').forEach(card => {
+                card.draggable = false;
+            });
 
             // 清理事件监听器
             document.querySelectorAll('.tab-btn').forEach(tab => {
@@ -1267,28 +1442,47 @@ document.addEventListener('DOMContentLoaded', async () => {
 document.addEventListener('DOMContentLoaded', () => {
     const dragSortToggle = document.getElementById('enable-drag-sort');
     if (dragSortToggle) {
-        // 从localStorage读取之前的状态
-        const isDragEnabled = localStorage.getItem('dragSortEnabled') === 'true';
-        dragSortToggle.checked = isDragEnabled;
+        // 检查是否为游客
+        const isGuest = document.body.classList.contains('guest-user');
+        
+        // 确保初始状态下禁用拖拽
+        document.querySelectorAll('.server-card').forEach(card => {
+            card.draggable = false;
+        });
+        
+        if (isGuest) {
+            // 游客禁用拖拽功能
+            dragSortToggle.checked = false;
+            dragSortToggle.disabled = true;
+            dragSortToggle.title = '游客不能使用拖拽排序功能';
+            localStorage.setItem('dragSortEnabled', 'false');
+            DragManager.destroy();
+        } else {
+            // 从localStorage读取之前的状态，默认为false
+            const isDragEnabled = localStorage.getItem('dragSortEnabled') === 'true';
+            dragSortToggle.checked = isDragEnabled;
 
-        // 根据开关状态初始化或禁用拖拽功能
-        if (isDragEnabled) {
-            DragManager.init();
-        }
-
-        // 监听开关变化
-        dragSortToggle.addEventListener('change', (e) => {
-            const enabled = e.target.checked;
-            localStorage.setItem('dragSortEnabled', enabled);
-            
-            if (enabled) {
+            // 根据开关状态初始化或禁用拖拽功能
+            if (isDragEnabled) {
                 DragManager.init();
-                notice('已启用拖拽排序功能');
             } else {
                 DragManager.destroy();
-                notice('已禁用拖拽排序功能');
             }
-        });
+
+            // 监听开关变化
+            dragSortToggle.addEventListener('change', (e) => {
+                const enabled = e.target.checked;
+                localStorage.setItem('dragSortEnabled', enabled);
+                
+                if (enabled) {
+                    DragManager.init();
+                    notice('已启用拖拽排序功能');
+                } else {
+                    DragManager.destroy();
+                    notice('已禁用拖拽排序功能');
+                }
+            });
+        }
     }
 });
 

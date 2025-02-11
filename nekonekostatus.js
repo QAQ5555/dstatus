@@ -249,13 +249,16 @@ svr.server=svr.listen(port,host,()=>{console.log(`server running @ http://${host
 svr.get('/', (req, res) => {
     try {
         // 获取用户偏好主题
-        let theme = req.query.theme || req.cookies.theme || setting.theme || 'card';
+        let theme = req.query.theme || req.cookies.theme;
         const isAdmin = req.admin;
         
-        // 如果是移动设备且没有明确指定主题，默认使用列表视图
-        if (req.isMobile && !req.query.theme) {
+        // 如果是移动设备且没有明确指定主题或保存的偏好，默认使用列表视图
+        if (req.isMobile && !theme) {
             theme = 'list';
         }
+        
+        // 如果还没有主题，使用系统默认主题
+        theme = theme || setting.theme || 'card';
         
         console.log(`[${new Date().toISOString()}] 主页请求 - 主题:${theme} 管理员:${isAdmin} 移动端:${req.isMobile}`);
         

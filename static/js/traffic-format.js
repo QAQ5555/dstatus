@@ -24,7 +24,9 @@ window.TrafficFormat = {
      */
     gbToBytes(gb) {
         if (!gb) return 0;
-        return Math.floor(gb * 1024 * 1024 * 1024);
+        const value = Number(gb);
+        if (isNaN(value) || !isFinite(value)) return 0;
+        return Math.floor(value * 1024 * 1024 * 1024);
     },
 
     /**
@@ -43,16 +45,17 @@ window.TrafficFormat = {
         }
 
         const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-        value = Math.abs(value);
-
+        const k = 1024;
+        
         if (value === 0) return '0 B';
+        
+        // 使用对数计算来确定合适的单位级别
+        const i = Math.floor(Math.log(Math.abs(value)) / Math.log(k));
+        const unitIndex = Math.min(i, units.length - 1);
+        
+        value = value / Math.pow(k, unitIndex);
 
-        let unitIndex = 0;
-        while (value >= 1024 && unitIndex < units.length - 1) {
-            value /= 1024;
-            unitIndex++;
-        }
-
+        // 根据数值大小决定小数位数
         let decimals = 2;
         if (value >= 100) decimals = 1;
         else if (value >= 10) decimals = 2;

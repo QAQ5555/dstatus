@@ -1,14 +1,14 @@
 <!-- 顶部导航栏 -->
 <nav class="fixed top-0 left-0 right-0 z-40">
     <!-- 背景层 -->
-    <div class="absolute inset-0">
-        <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md"></div>
+    <div class="absolute inset-0" style="padding-top: env(safe-area-inset-top);">
+        <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md" style="margin-top: calc(-1 * env(safe-area-inset-top));"></div>
         <div class="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-slate-700/50 to-transparent"></div>
     </div>
     
     <!-- 内容容器 -->
     <div class="relative max-w-container mx-auto h-16">
-        <div class="flex items-center justify-between h-full px-6">
+        <div class="flex items-center justify-between h-full px-6" style="padding-top: env(safe-area-inset-top);">
             <!-- Logo区域 -->
             <div class="flex items-center">
                 <a href="/" class="group flex items-center space-x-3">
