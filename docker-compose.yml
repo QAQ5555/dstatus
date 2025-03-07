@@ -8,8 +8,8 @@ services:
     ports:
       - "0.0.0.0:${WEB_PORT:-5555}:5555"      # Web 管理界面端口
     volumes:
-      - /root/dstatus/database:/app/database
-      - /root/dstatus/logs:/app/logs
+      - /root/docker/dstatus/database:/app/database
+      - /root/docker/dstatus/logs:/app/logs
     environment:
       - NODE_ENV=production
       - TZ=Asia/Shanghai
@@ -22,17 +22,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
-
-volumes:
-  dstatus-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /root/dstatus/database
-  dstatus-logs:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /root/dstatus/logs
