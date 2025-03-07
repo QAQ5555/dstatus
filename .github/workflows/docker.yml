@@ -44,9 +44,9 @@ jobs:
         run: |
           docker save -o ${{ env.IMAGE_NAME }}.tar ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }}
 
-      # 步骤 6: 上传构建产物（直接使用 v3 标签）
+      # 步骤 6: 上传构建产物
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: docker-image
           path: ${{ env.IMAGE_NAME }}.tar
