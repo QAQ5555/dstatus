@@ -1,51 +1,52 @@
 name: Docker Build and Save
 
 on:
-  # 手动触发配置
   workflow_dispatch:
     inputs:
       version:
         description: '镜像版本号（例如：v1.0.0）'
         required: true
         default: 'latest'
-  # 自动触发配置（可选）
-  push:
-    branches: [ "main" ]
 
 env:
-  IMAGE_NAME: my-app  # 自定义镜像名称
+  IMAGE_NAME: my-app
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read   # 最低权限要求
+      contents: read
 
     steps:
-      # 步骤1: 检出代码
+      # 清理缓存
+      - name: Clean up action cache
+        run: |
+          sudo rm -rf ~/work/_actions/cache/*
+
+      # 检出代码
       - name: Checkout repository
-        uses: actions/checkout@v3  # 使用固定版本v3
+        uses: actions/checkout@v3
 
-      # 步骤2: 初始化Docker构建环境
+      # 初始化 Docker 构建环境
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2  # 使用固定版本v2
+        uses: docker/setup-buildx-action@v2
 
-      # 步骤3: 构建Docker镜像
+      # 构建镜像
       - name: Build Docker image
-        uses: docker/build-push-action@v4  # 使用固定版本v4
+        uses: docker/build-push-action@v4
         with:
           context: .
-          load: true  # 将镜像加载到本地Docker
+          load: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }}
 
-      # 步骤4: 将镜像保存为.tar文件
+      # 保存为 .tar 文件
       - name: Save Docker image as .tar
         run: |
           docker save -o ${{ env.IMAGE_NAME }}.tar ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }}
 
-      # 步骤5: 上传.tar文件为构建产物（修复版）
+      # 上传构建产物（使用固定 SHA）
       - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v3  # 明确使用v3版本
+        uses: actions/upload-artifact@d5d050df31c4f9b7be50e2f341477a0d7c1096c7
         with:
           name: docker-image
           path: ${{ env.IMAGE_NAME }}.tar
