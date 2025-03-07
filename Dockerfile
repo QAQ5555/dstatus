@@ -1,44 +1,34 @@
-FROM node:18 as builder
+# ---------- 构建阶段 ----------
+FROM node:18-alpine as builder
 WORKDIR /app
 COPY . .
 RUN npm install
 
-FROM debian:bullseye-slim
-# 安装 Node.js 和必要的依赖
-RUN apt-get update && apt-get install -y \
-    curl \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# ---------- 运行阶段 ----------
+FROM node:18-alpine
 
-# 创建 node 用户和组
-RUN groupadd -r node && useradd -r -g node -m node
+# 安装运行时依赖（必需的工具）
+RUN apk add --no-cache tini
 
+# 创建非 root 用户
+RUN adduser -D -h /app -s /bin/sh node
+
+# 设置工作目录并复制文件
 WORKDIR /app
-
-# 从构建阶段复制文件
 COPY --from=builder /app .
 
-# 创建目录并设置权限（分步执行以便于调试）
-RUN mkdir -p /database && \
-    mkdir -p /logs && \
-    touch /tokens.json
+# 创建默认目录结构（容器内路径）
+RUN mkdir -p /database /logs \
+  && touch /tokens.json \
+  && chown -R node:node /app /database /logs /tokens.json \
+  && chmod 755 /database /logs \
+  && chmod 644 /tokens.json
 
-# 设置所有权和权限
-RUN chown -R node:node /app && \
-    chown node:node /database && \
-    chown node:node /logs && \
-    chown node:node /tokens.json && \
-    chmod 755 /database && \
-    chmod 755 /logs && \
-    chmod 644 /tokens.json
-
-# 设置数据卷
-VOLUME ["/database", "/logs"]
-
+# 使用非 root 用户运行
 USER node
 
-EXPOSE 5555
+# 使用 tini 作为初始化进程
+ENTRYPOINT ["/sbin/tini", "--"]
 
+# 启动应用
 CMD ["node", "nekonekostatus.js"]
