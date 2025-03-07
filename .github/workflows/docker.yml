@@ -9,7 +9,7 @@ on:
         default: 'latest'
 
 env:
-  IMAGE_NAME: my-app
+  IMAGE_NAME: dstatus  # 修改为 dstatus
 
 jobs:
   build:
@@ -18,7 +18,7 @@ jobs:
       contents: read
 
     steps:
-      # 步骤 1: 清理 Actions 缓存
+      # 步骤 1: 清理缓存
       - name: Clean up action cache
         run: |
           sudo rm -rf ~/work/_actions/cache/*
@@ -27,11 +27,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 步骤 3: 初始化 Docker 构建环境
+      # 步骤 3: 初始化 Docker 环境
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # 步骤 4: 构建 Docker 镜像
+      # 步骤 4: 构建镜像
       - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
@@ -39,12 +39,22 @@ jobs:
           load: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }}
 
-      # 步骤 5: 保存镜像为 .tar 文件
+      # 步骤 5: 保存为 .tar
       - name: Save Docker image as .tar
         run: |
           docker save -o ${{ env.IMAGE_NAME }}.tar ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }}
 
-      # 步骤 6: 上传构建产物
+      # 步骤 6: 检查镜像内文件是否存在
+      - name: Check /app/nekonekostatus.js
+        run: |
+          # 临时运行容器并检查文件
+          docker run --rm ${{ env.IMAGE_NAME }}:${{ github.event.inputs.version || 'latest' }} \
+            ls -la /app/nekonekostatus.js
+
+          # 如果文件不存在，此命令会抛出错误并终止工作流
+          echo "文件 /app/nekonekostatus.js 存在，校验通过"
+
+      # 步骤 7: 上传构建产物
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
         with:
